@@ -29,6 +29,14 @@ class float2
 		return float2(x - n.x, y - n.y);
 	}
 
+	float2 operator/(const float& n) {
+		return float2(x / n, y / n);
+	}
+
+	float2 operator*(const float& n) {
+		return float2(x * n, y * n);
+	}
+
 };
 
 

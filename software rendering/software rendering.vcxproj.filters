@@ -13,6 +13,12 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Source Files\minifb">
+      <UniqueIdentifier>{0fbec3af-b0f7-4194-a468-ecdcfcb2b7b0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\minifb\windows">
+      <UniqueIdentifier>{58702246-f1de-43fb-81e2-d41dbf94acb7}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -21,10 +27,34 @@
     <ClCompile Include="Maths.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="MiniFB_common.c">
+      <Filter>Source Files\minifb</Filter>
+    </ClCompile>
+    <ClCompile Include="MiniFB_cpp.cpp">
+      <Filter>Source Files\minifb</Filter>
+    </ClCompile>
+    <ClCompile Include="MiniFB_internal.c">
+      <Filter>Source Files\minifb</Filter>
+    </ClCompile>
+    <ClCompile Include="MiniFB_timer.c">
+      <Filter>Source Files\minifb</Filter>
+    </ClCompile>
+    <ClCompile Include="windows\WinMiniFB.c">
+      <Filter>Source Files\minifb\windows</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Maths.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MiniFB_internal.h">
+      <Filter>Source Files\minifb</Filter>
+    </ClInclude>
+    <ClInclude Include="WindowData.h">
+      <Filter>Source Files\minifb</Filter>
+    </ClInclude>
+    <ClInclude Include="windows\WindowData_Win.h">
+      <Filter>Source Files\minifb\windows</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

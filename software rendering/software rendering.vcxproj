@@ -103,10 +103,12 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>C:\D\code\minifb\minifb-master\src;C:\D\code\minifb\minifb-master\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>gdi32.lib;user32.lib;shell32.lib;Winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -126,9 +128,17 @@
   <ItemGroup>
     <ClCompile Include="Maths.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="MiniFB_common.c" />
+    <ClCompile Include="MiniFB_cpp.cpp" />
+    <ClCompile Include="MiniFB_internal.c" />
+    <ClCompile Include="MiniFB_timer.c" />
+    <ClCompile Include="windows\WinMiniFB.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Maths.h" />
+    <ClInclude Include="MiniFB_internal.h" />
+    <ClInclude Include="WindowData.h" />
+    <ClInclude Include="windows\WindowData_Win.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -6,6 +6,11 @@ using namespace std;
 #include <fstream>
 #include <string>
 #include <cstdint>
+#include <random>
+#include "MiniFB.h"
+
+constexpr auto width = 64;
+constexpr auto height = 64;
 
 static void WriteImageToFile(std::vector<std::vector<float3>>& image, const std::string& filename, int width, int height) {
     std::ofstream outFile(filename + ".bmp", std::ios::out | std::ios::binary);
@@ -56,32 +61,100 @@ static void WriteImageToFile(std::vector<std::vector<float3>>& image, const std:
 
 }
 
-static void CreateTestImage() {
-	constexpr auto width = 64;
-	constexpr auto height = 64;
+std::vector<float2> points;
+std::vector<float2> velocities;
+std::vector<float3> triangleCols;
+std::vector<float3> image;
+std::vector<uint32_t> buffers;
 
-	std::vector<std::vector<float3>> image(width, std::vector<float3> (height, 0));
+void Run() {
 
-	float2 a = float2(0.2f * width, 0.2f * height);
-	float2 b = float2(0.7f * width, 0.4f * height);
-	float2 c = float2(0.4f * width, 0.8f * height);
-
-    for (size_t y = 0; y < height; y++) {
-        for (size_t x = 0; x < width; x++) {
-
-			float2 p = float2(static_cast<float>(x), static_cast<float>(y));
-
-			bool inside = PointInTriangle(a, b, c, p);
-
-			if (inside) image[x][y] = float3(0, 0, 1);
-        }
-    }
-
-    WriteImageToFile(image, "test", width, height);
 }
+
+static void CreateTestImage() {
+	const int triangleCount = 250;
+	points = std::vector<float2>(triangleCount * 3);
+	velocities = std::vector<float2>(points.size());
+	triangleCols = std::vector<float3>(triangleCount);
+
+	float2 halfSize = float2(width, height) / 2.0f;
+
+	std::random_device rd;
+	std::mt19937 gen(rd());
+
+	std::uniform_real_distribution<float> dis1(0.0f, static_cast<float>(width));
+	std::uniform_real_distribution<float> dis2(0.0f, static_cast<float>(height));
+	std::uniform_int_distribution<int> disCol(0, 255);
+
+	for (size_t i = 0; i < points.size(); i++)
+	{
+		points[i] = halfSize + (float2(dis1(gen), dis2(gen)) - halfSize) * 0.3f;
+	}
+
+	for (size_t i = 0; i < velocities.size(); i+=3)
+	{
+		float2 velocity = (float2(dis1(gen), dis2(gen)) - halfSize) * 0.5f;
+		velocities[i + 0] = velocity;
+		velocities[i + 1] = velocity;
+		velocities[i + 2] = velocity;
+		triangleCols[i / 3] = float3(static_cast<float>(disCol(gen)), static_cast<float>(disCol(gen))
+			, static_cast<float>(disCol(gen)));
+	}
+
+	Run();
+
+    //WriteImageToFile(image, "test", width, height);
+}
+
+static void Render() {
+	for (size_t y = 0; y < height; y++)
+	{
+		for (size_t x = 0; x < width; x++)
+		{	
+			for (size_t i = 0; i < points.size(); i += 3)
+			{
+				auto a = points[i + 0];
+				auto b = points[i + 1];
+				auto c = points[i + 2];
+				auto p = float2(static_cast<float>(x), static_cast<float>(y));
+
+				if (PointInTriangle(a, b, c, p))
+				{
+					image[x + y * height] = triangleCols[i / 3];
+				}
+			}
+		}
+	}
+
+	for (size_t i = 0; i < image.size(); i++)
+	{
+		buffers[i] = (static_cast<uint32_t>(image[i].r) << 24) | (static_cast<uint32_t>(image[i].g) <<16) | (static_cast<uint32_t>(image[i].b) << 8);
+	}
+}
+
 
 int main(int argc, char** argv) {
 	cout << "Hello, software rendering!" << endl;
 
+	struct mfb_window* window = mfb_open_ex("Software Renderer", width, height, MFB_WF_RESIZABLE);
+	if (window == NULL)
+		return 0;
+
+	buffers = std::vector<uint32_t>(width * height * 4, 0);
+	image = std::vector<float3>(width * height, float3(0.0f, 0.0f, 0.0f));
+
 	CreateTestImage();
+
+	mfb_update_state state;
+	do {
+		Render();
+
+		state = mfb_update_ex(window, buffers.data(), width, height);
+
+		if (state != MFB_STATE_OK)
+			break;
+	} while (mfb_wait_sync(window));
+
+	//CreateTestImage();
+	return 0;
 }

@@ -8,9 +8,12 @@ using namespace std;
 #include <cstdint>
 #include <random>
 #include "MiniFB.h"
+#include <chrono>
+#include <algorithm>
+#include <cmath>
 
-constexpr auto width = 64;
-constexpr auto height = 64;
+constexpr auto width = 800;
+constexpr auto height = 600;
 
 static void WriteImageToFile(std::vector<std::vector<float3>>& image, const std::string& filename, int width, int height) {
     std::ofstream outFile(filename + ".bmp", std::ios::out | std::ios::binary);
@@ -67,15 +70,13 @@ std::vector<float3> triangleCols;
 std::vector<float3> image;
 std::vector<uint32_t> buffers;
 
-void Run() {
-
-}
 
 static void CreateTestImage() {
 	const int triangleCount = 250;
 	points = std::vector<float2>(triangleCount * 3);
 	velocities = std::vector<float2>(points.size());
 	triangleCols = std::vector<float3>(triangleCount);
+	image = std::vector<float3>(width * height, float3(0.0f, 0.0f, 0.0f));
 
 	float2 halfSize = float2(width, height) / 2.0f;
 
@@ -97,16 +98,36 @@ static void CreateTestImage() {
 		velocities[i + 0] = velocity;
 		velocities[i + 1] = velocity;
 		velocities[i + 2] = velocity;
-		triangleCols[i / 3] = float3(static_cast<float>(disCol(gen)), static_cast<float>(disCol(gen))
-			, static_cast<float>(disCol(gen)));
-	}
 
-	Run();
+		triangleCols[i / 3] = float3(static_cast<uint8_t>(disCol(gen)), static_cast<uint8_t>(disCol(gen)), static_cast<uint8_t>(disCol(gen)));
+		
+	}
 
     //WriteImageToFile(image, "test", width, height);
 }
 
+uint32_t frame = 0;
+
 static void Render() {
+	//for (size_t i = 0; i < points.size(); i += 3)
+	//{
+	//	auto a = points[i + 0];
+	//	auto b = points[i + 1];
+	//	auto c = points[i + 2];
+
+	//	float minX = std::min(std::min(a.x, b.x), c.x);
+	//	float minY = std::min(std::min(a.y, b.y), c.y);
+	//	float maxX = std::max(std::max(a.x, b.x), c.x);
+	//	float maxY = std::max(std::max(a.y, b.y), c.y);
+
+	//	// Pixel block covering the triangle bounds
+	//	
+	//	int blockStartx = std::clamp(static_cast<int>(minX), 0, width - 1);
+	//	int blockStartY = std::clamp(static_cast<int>(minY), 0, height - 1);
+	//	int blockEndx = std::clamp(static_cast<int>(std::ceil(maxX)), 0, width - 1);
+	//	int blockEndY = std::clamp(static_cast<int>(std::ceil(maxY)), 0, height - 1);
+	//}
+
 	for (size_t y = 0; y < height; y++)
 	{
 		for (size_t x = 0; x < width; x++)
@@ -120,15 +141,31 @@ static void Render() {
 
 				if (PointInTriangle(a, b, c, p))
 				{
-					image[x + y * height] = triangleCols[i / 3];
+					buffers[x + y * width] = (static_cast<uint32_t>(triangleCols[i / 3].r) << 24) | (static_cast<uint32_t>(triangleCols[i / 3].g) << 16) |
+						(static_cast<uint32_t>(triangleCols[i / 3].b) << 8) | 0;
+					//image[x + y * height] = triangleCols[i / 3];
+					//auto s = a + b;
+					//buffers[x + y * height] = 1;
 				}
 			}
 		}
 	}
 
-	for (size_t i = 0; i < image.size(); i++)
+	//for (size_t i = 0; i < image.size(); i++)
+	//{
+	//	buffers[i] = (static_cast<uint32_t>(image[i].r) << 24) | (static_cast<uint32_t>(image[i].g) <<16) | (static_cast<uint32_t>(image[i].b) << 8);
+	//}
+}
+
+static void Update(float time) {
+	auto time_s = time / 1000.0f;
+	for (size_t i = 0; i < points.size(); i++)
 	{
-		buffers[i] = (static_cast<uint32_t>(image[i].r) << 24) | (static_cast<uint32_t>(image[i].g) <<16) | (static_cast<uint32_t>(image[i].b) << 8);
+		points[i] = points[i] + velocities[i] * time_s;
+		if (points[i].x < 0 || points[i].x > width)
+			velocities[i].x *= -1.0f;
+		if (points[i].y < 0 || points[i].y > height)
+			velocities[i].y *= -1.0f;
 	}
 }
 
@@ -140,14 +177,33 @@ int main(int argc, char** argv) {
 	if (window == NULL)
 		return 0;
 
-	buffers = std::vector<uint32_t>(width * height * 4, 0);
+	buffers = std::vector<uint32_t>(width * height, 0);
 	image = std::vector<float3>(width * height, float3(0.0f, 0.0f, 0.0f));
 
 	CreateTestImage();
 
+	auto lastTime = std::chrono::steady_clock::now();
+	auto currentTime = std::chrono::steady_clock::now();
+
+	auto endTime = std::chrono::steady_clock::now();
+	auto deltaTime = std::chrono::duration<float, std::milli>(endTime - currentTime);
+
 	mfb_update_state state;
 	do {
+		endTime = std::chrono::steady_clock::now();
+		deltaTime = endTime - currentTime;
+
+		Update(deltaTime.count());
+
+		currentTime = std::chrono::steady_clock::now();
+
+		//memset(buffers.data(), 0, buffers.size() * sizeof(uint32_t));
 		Render();
+
+		lastTime = std::chrono::steady_clock::now();
+
+		std::chrono::duration<float, milli> duration = lastTime - currentTime;
+		cout << "Frame: " << frame++ << " Time: " << duration.count() << "ms" << " delta_time: " << deltaTime.count() << endl;
 
 		state = mfb_update_ex(window, buffers.data(), width, height);
 

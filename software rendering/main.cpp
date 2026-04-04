@@ -15,61 +15,112 @@ using namespace std;
 constexpr auto width = 800;
 constexpr auto height = 600;
 
-static void WriteImageToFile(std::vector<std::vector<float3>>& image, const std::string& filename, int width, int height) {
-    std::ofstream outFile(filename + ".bmp", std::ios::out | std::ios::binary);
-    uint32_t ByteCounts [] = {14, 40, static_cast<uint32_t>(image.size()) * 4};
-
-    if (outFile.is_open()) {
-        outFile << "BM"; // "BM"
-		uint32_t count = ByteCounts[0] + ByteCounts[1] + ByteCounts[2];
-		outFile.write(reinterpret_cast<char *>(&count), sizeof(uint32_t)); // File size
-		uint32_t reserved = 0;
-		outFile.write(reinterpret_cast<char *>(&reserved), sizeof(uint32_t)); // Reserved
-		uint32_t offset = ByteCounts[0] + ByteCounts[1];
-		outFile.write(reinterpret_cast<char *>(&offset), sizeof(uint32_t)); // Pixel data offset
-		outFile.write(reinterpret_cast<char *>(&ByteCounts[1]), sizeof(uint32_t)); // DIB header size
-		outFile.write(reinterpret_cast<char *>(&width), sizeof(uint32_t)); // Image width
-		outFile.write(reinterpret_cast<char *>(&height), sizeof(uint32_t)); // Image height
-		uint16_t planes = 1;
-		outFile.write(reinterpret_cast<char *>(&planes), sizeof(uint16_t)); // Color planes
-		uint16_t bitsPerPixel = 8 * 4;
-		outFile.write(reinterpret_cast<char *>(&bitsPerPixel), sizeof(uint16_t)); // Bits per pixel
-		outFile.write(reinterpret_cast<char *>(&reserved), sizeof(uint32_t)); // Compression method (none)
-		outFile.write(reinterpret_cast<char*>(&ByteCounts[2]), sizeof(uint32_t)); // Image size (can be 0 for uncompressed)
-		char byte[16]{};
-		outFile.write(byte, sizeof(byte));
-
-		for (size_t y = 0; y < height; y++)
-		{
-			for (size_t x = 0; x < width; x++)
-			{
-				float3 col = image[x][y];
-				uint8_t b = static_cast<uint8_t>(col.b * 255);
-				uint8_t g = static_cast<uint8_t>(col.g * 255);
-				uint8_t r = static_cast<uint8_t>(col.r * 255);
-				uint8_t a = 0;
-
-				outFile.write(reinterpret_cast<char*>(&b), sizeof(uint8_t));
-				outFile.write(reinterpret_cast<char*>(&g), sizeof(uint8_t));
-				outFile.write(reinterpret_cast<char*>(&r), sizeof(uint8_t));
-				outFile.write(reinterpret_cast<char *>(&a), sizeof(uint8_t));
-			}
-		}
-
-		outFile.flush();
-    }
-	else {
-		cout << "Failed to open file for writing:" << endl;
-	}
-
-}
-
 std::vector<float2> points;
 std::vector<float2> velocities;
 std::vector<float3> triangleCols;
 std::vector<float3> image;
 std::vector<uint32_t> buffers;
 
+uint32_t frame = 0;
+
+class Model {
+	public:
+		std::vector<float3>Points;
+		std::vector<float3>Cols;
+
+		Model(const std::vector<float3>& points, const std::vector<float3>& cols) : Points(points), Cols(cols) {}
+};
+
+class RenderTarget {
+	public:
+		uint32_t Width;
+		uint32_t Height;
+		float2 Size = float2(Width, Height);
+		std::vector<uint32_t> Buffers;
+
+		RenderTarget(uint32_t width, uint32_t height) : Width(width), Height(height), Buffers(width* height, 0) {}
+};
+
+static std::vector<float3> LoadObjFile(const std::string& filename) {
+	std::vector<float3> allPoints;
+	std::vector<float3> trianglePoints;
+
+	string line;
+
+	ifstream file(filename);
+	if (file.is_open()) {
+		while (std::getline(file, line)) {
+			if (line.back() == '\r')
+				line.pop_back();
+
+			if (line.substr(0, 2) == "v ") {
+				auto firstSpace = line.substr(2).find(' ') + 2;
+				auto secondSpace = line.substr(firstSpace + 1).find(' ') + firstSpace + 1;
+
+				allPoints.push_back(float3(
+					stof(line.substr(2, firstSpace)),
+					stof(line.substr(firstSpace + 1, secondSpace - firstSpace)),
+					stof(line.substr(secondSpace + 1))
+				));
+
+				//cout << "Loaded vertex: " << allPoints.back().x << ' ' << allPoints.back().y << ' ' << allPoints.back().z << '\n';
+			}
+			else if (line.substr(0, 2) == "f ") {
+				std::vector<string> faceIndexGroups;
+				auto current = 2;
+				while (current <= line.size()) {
+					auto nextSpace = line.substr(current).find(' ') + current;
+
+					if (nextSpace == current - 1) {
+						faceIndexGroups.push_back(line.substr(current));
+						break; 
+					}
+
+					faceIndexGroups.push_back(line.substr(current, nextSpace - current));
+					current = nextSpace + 1;
+				}
+
+				for (size_t i = 0; i < faceIndexGroups.size(); i++)
+				{
+					auto currentSlash = 0;
+					while (currentSlash <= faceIndexGroups[i].size()) {
+						auto nextSlash = faceIndexGroups[i].substr(currentSlash).find('/') + currentSlash;
+
+						//if (nextSlash == currentSlash - 1) break;
+
+						auto pointIndex = stoi(faceIndexGroups[i].substr(currentSlash, nextSlash - currentSlash)) - 1;
+
+						if (i >= 3) {
+							trianglePoints.push_back(trianglePoints.at(trianglePoints.size() - (3 * i - 6)));
+							//cout << "Triangle vertex: " << i << ' ' << trianglePoints.back().x << ' ' <<
+								//trianglePoints.back().y << ' ' << trianglePoints.back().z << '\n';
+						}
+						if (i >= 3) {
+							trianglePoints.push_back(trianglePoints.at(trianglePoints.size() - 2));
+							//cout << "Triangle vertex: " << i << ' ' << trianglePoints.back().x << ' ' <<
+								//trianglePoints.back().y << ' ' << trianglePoints.back().z << '\n';
+						}
+						trianglePoints.push_back(allPoints[pointIndex]);
+
+						//cout << "Triangle vertex: " << i << ' ' << trianglePoints.back().x << ' ' <<
+							//trianglePoints.back().y << ' ' << trianglePoints.back().z << '\n';
+
+						//currentSlash = nextSlash + 1;
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	//for (size_t i = 0; i < trianglePoints.size(); i++)
+	//{
+		//cout << "Triangle vertex: " << i << ' ' << trianglePoints[i].x << ' ' << trianglePoints[i].y << ' ' << trianglePoints[i].z << '\n';
+	//}
+	cout << trianglePoints.size() << '\n';
+
+	return trianglePoints;
+}
 
 static void CreateTestImage() {
 	const int triangleCount = 250;
@@ -102,18 +153,24 @@ static void CreateTestImage() {
 		triangleCols[i / 3] = float3(static_cast<uint8_t>(disCol(gen)), static_cast<uint8_t>(disCol(gen)), static_cast<uint8_t>(disCol(gen)));
 		
 	}
-
-    //WriteImageToFile(image, "test", width, height);
 }
 
-uint32_t frame = 0;
+static float2 VertexToScreen(float3 vertex, float2 numPixels) {
+	float screenHeight_world = 5;
+	float pixelsPerWorldUnit = numPixels.y / screenHeight_world;
 
-static void Render() {
-	for (size_t i = 0; i < points.size(); i += 3)
+	float2 pixelOffset = float2(vertex.x, vertex.y) * pixelsPerWorldUnit;
+	return numPixels / 2.0f + pixelOffset;
+}
+
+static void Render(Model& model, RenderTarget& target) {
+	for (size_t i = 0; i < model.Points.size(); i += 3)
 	{
-		auto a = points[i + 0];
-		auto b = points[i + 1];
-		auto c = points[i + 2];
+		auto a = VertexToScreen(model.Points[i + 0], target.Size);
+		auto b = VertexToScreen(model.Points[i + 1], target.Size);
+		auto c = VertexToScreen(model.Points[i + 2], target.Size);
+
+		//cout << a.x << ',' << a.y << ' ' << b.x << ',' << b.y << ' ' << c.x << ',' << c.y << '\n';
 
 		float minX = std::min(std::min(a.x, b.x), c.x);
 		float minY = std::min(std::min(a.y, b.y), c.y);
@@ -122,10 +179,10 @@ static void Render() {
 
 		//Pixel block covering the triangle bounds
 
-		int blockStartX = std::clamp(static_cast<int>(minX), 0, width - 1);
-		int blockStartY = std::clamp(static_cast<int>(minY), 0, height - 1);
-		int blockEndX = std::clamp(static_cast<int>(std::ceil(maxX)), 0, width - 1);
-		int blockEndY = std::clamp(static_cast<int>(std::ceil(maxY)), 0, height - 1);
+		int blockStartX = std::clamp(static_cast<int>(minX), 0, static_cast<int>(target.Width - 1));
+		int blockStartY = std::clamp(static_cast<int>(minY), 0, static_cast<int>(target.Height - 1));
+		int blockEndX = std::clamp(static_cast<int>(std::ceil(maxX)), 0, static_cast<int>(target.Width - 1));
+		int blockEndY = std::clamp(static_cast<int>(std::ceil(maxY)), 0, static_cast<int>(target.Height - 1));
 
 
 		for (size_t y = blockStartY; y < blockEndY; y++)
@@ -134,8 +191,8 @@ static void Render() {
 			{
 				if (!PointInTriangle(a, b, c, float2(static_cast<float>(x), static_cast<float>(y))))
 					continue;
-				buffers[x + y * width] = (static_cast<uint32_t>(triangleCols[i / 3].r) << 24) | (static_cast<uint32_t>(triangleCols[i / 3].g) << 16) |
-					(static_cast<uint32_t>(triangleCols[i / 3].b) << 8) | 0;
+				target.Buffers[x + y * target.Width] = (static_cast<uint32_t>(model.Cols[i / 3].r) << 24) | (static_cast<uint32_t>(model.Cols[i / 3].g) << 16) |
+					(static_cast<uint32_t>(model.Cols[i / 3].b) << 8) | 0;
 			}
 		}
 	}
@@ -177,7 +234,20 @@ int main(int argc, char** argv) {
 	buffers = std::vector<uint32_t>(width * height, 0);
 	image = std::vector<float3>(width * height, float3(0.0f, 0.0f, 0.0f));
 
-	CreateTestImage();
+	auto model = LoadObjFile("box.obj");
+
+	std::random_device rd;
+	std::mt19937 gen(rd() ^ std::chrono::system_clock::now().time_since_epoch().count());
+	std::uniform_real_distribution<float> disCol(0, 255.0f);
+
+	std::vector<float3> boxCols(model.size() / 3);
+	for (size_t i = 0; i < boxCols.size(); i++)
+	{
+		boxCols[i] = float3(disCol(gen), disCol(gen), disCol(gen));
+	}
+
+	auto BoxModel = Model(model, boxCols);
+	auto Target = RenderTarget(width, height);
 
 	auto lastTime = std::chrono::steady_clock::now();
 	auto currentTime = std::chrono::steady_clock::now();
@@ -190,19 +260,19 @@ int main(int argc, char** argv) {
 		endTime = std::chrono::steady_clock::now();
 		deltaTime = endTime - currentTime;
 
-		Update(deltaTime.count());
+		//Update(deltaTime.count());
 
 		currentTime = std::chrono::steady_clock::now();
 
-		memset(buffers.data(), 0, buffers.size() * sizeof(uint32_t));
-		Render();
+		memset(Target.Buffers.data(), 0, buffers.size() * sizeof(uint32_t));
+		Render(BoxModel, Target);
 
 		lastTime = std::chrono::steady_clock::now();
 
 		std::chrono::duration<float, milli> duration = lastTime - currentTime;
 		cout << "Frame: " << frame++ << " Time: " << duration.count() << "ms" << " delta_time: " << deltaTime.count() << endl;
 
-		state = mfb_update_ex(window, buffers.data(), width, height);
+		state = mfb_update_ex(window, Target.Buffers.data(), width, height);
 
 		if (state != MFB_STATE_OK)
 			break;

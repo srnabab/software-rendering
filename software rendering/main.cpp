@@ -94,7 +94,7 @@ static void CreateTestImage() {
 
 	for (size_t i = 0; i < velocities.size(); i+=3)
 	{
-		float2 velocity = (float2(dis1(gen), dis2(gen)) - halfSize) * 0.5f;
+		float2 velocity = (float2(dis1(gen), dis2(gen)) - halfSize) * 0.2f;
 		velocities[i + 0] = velocity;
 		velocities[i + 1] = velocity;
 		velocities[i + 2] = velocity;
@@ -109,52 +109,36 @@ static void CreateTestImage() {
 uint32_t frame = 0;
 
 static void Render() {
-	//for (size_t i = 0; i < points.size(); i += 3)
-	//{
-	//	auto a = points[i + 0];
-	//	auto b = points[i + 1];
-	//	auto c = points[i + 2];
-
-	//	float minX = std::min(std::min(a.x, b.x), c.x);
-	//	float minY = std::min(std::min(a.y, b.y), c.y);
-	//	float maxX = std::max(std::max(a.x, b.x), c.x);
-	//	float maxY = std::max(std::max(a.y, b.y), c.y);
-
-	//	// Pixel block covering the triangle bounds
-	//	
-	//	int blockStartx = std::clamp(static_cast<int>(minX), 0, width - 1);
-	//	int blockStartY = std::clamp(static_cast<int>(minY), 0, height - 1);
-	//	int blockEndx = std::clamp(static_cast<int>(std::ceil(maxX)), 0, width - 1);
-	//	int blockEndY = std::clamp(static_cast<int>(std::ceil(maxY)), 0, height - 1);
-	//}
-
-	for (size_t y = 0; y < height; y++)
+	for (size_t i = 0; i < points.size(); i += 3)
 	{
-		for (size_t x = 0; x < width; x++)
-		{	
-			for (size_t i = 0; i < points.size(); i += 3)
-			{
-				auto a = points[i + 0];
-				auto b = points[i + 1];
-				auto c = points[i + 2];
-				auto p = float2(static_cast<float>(x), static_cast<float>(y));
+		auto a = points[i + 0];
+		auto b = points[i + 1];
+		auto c = points[i + 2];
 
-				if (PointInTriangle(a, b, c, p))
-				{
-					buffers[x + y * width] = (static_cast<uint32_t>(triangleCols[i / 3].r) << 24) | (static_cast<uint32_t>(triangleCols[i / 3].g) << 16) |
-						(static_cast<uint32_t>(triangleCols[i / 3].b) << 8) | 0;
-					//image[x + y * height] = triangleCols[i / 3];
-					//auto s = a + b;
-					//buffers[x + y * height] = 1;
-				}
+		float minX = std::min(std::min(a.x, b.x), c.x);
+		float minY = std::min(std::min(a.y, b.y), c.y);
+		float maxX = std::max(std::max(a.x, b.x), c.x);
+		float maxY = std::max(std::max(a.y, b.y), c.y);
+
+		//Pixel block covering the triangle bounds
+
+		int blockStartX = std::clamp(static_cast<int>(minX), 0, width - 1);
+		int blockStartY = std::clamp(static_cast<int>(minY), 0, height - 1);
+		int blockEndX = std::clamp(static_cast<int>(std::ceil(maxX)), 0, width - 1);
+		int blockEndY = std::clamp(static_cast<int>(std::ceil(maxY)), 0, height - 1);
+
+
+		for (size_t y = blockStartY; y < blockEndY; y++)
+		{
+			for (size_t x = blockStartX; x < blockEndX; x++)
+			{
+				if (!PointInTriangle(a, b, c, float2(static_cast<float>(x), static_cast<float>(y))))
+					continue;
+				buffers[x + y * width] = (static_cast<uint32_t>(triangleCols[i / 3].r) << 24) | (static_cast<uint32_t>(triangleCols[i / 3].g) << 16) |
+					(static_cast<uint32_t>(triangleCols[i / 3].b) << 8) | 0;
 			}
 		}
 	}
-
-	//for (size_t i = 0; i < image.size(); i++)
-	//{
-	//	buffers[i] = (static_cast<uint32_t>(image[i].r) << 24) | (static_cast<uint32_t>(image[i].g) <<16) | (static_cast<uint32_t>(image[i].b) << 8);
-	//}
 }
 
 static void Update(float time) {
@@ -162,10 +146,23 @@ static void Update(float time) {
 	for (size_t i = 0; i < points.size(); i++)
 	{
 		points[i] = points[i] + velocities[i] * time_s;
-		if (points[i].x < 0 || points[i].x > width)
+		if (points[i].x < 0) {
+			points[i].x = 0;
 			velocities[i].x *= -1.0f;
-		if (points[i].y < 0 || points[i].y > height)
+		}
+		else if (points[i].x > width - 1) {
+			points[i].x = static_cast<float>(width - 1);
+			velocities[i].x *= -1.0f;
+		}
+
+		if (points[i].y < 0) {
+			points[i].y = 0;
 			velocities[i].y *= -1.0f;
+		}
+		else if (points[i].y > height - 1) {
+			points[i].y = static_cast<float>(height - 1);
+			velocities[i].y *= -1.0f;
+		}
 	}
 }
 
@@ -197,7 +194,7 @@ int main(int argc, char** argv) {
 
 		currentTime = std::chrono::steady_clock::now();
 
-		//memset(buffers.data(), 0, buffers.size() * sizeof(uint32_t));
+		memset(buffers.data(), 0, buffers.size() * sizeof(uint32_t));
 		Render();
 
 		lastTime = std::chrono::steady_clock::now();

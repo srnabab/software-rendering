@@ -1,4 +1,7 @@
 #pragma once
+
+#include <math.h>
+
 class float3
 {
 	public:
@@ -9,6 +12,14 @@ class float3
 		};
 
 	float3(float x = 0.0f, float y = 0.0f, float z = 0.0f) : x(x), y(y), z(z) {}
+
+	float3 operator+(const float3 &n) {
+		return float3(x + n.x, y + n.y, z + n.z);
+	}
+
+	float3 operator*(const float& n) {
+		return float3(x * n, y * n, z * n);
+	}
 };
 
 class float2
@@ -45,3 +56,48 @@ float Dot(float2 a, float2 b);
 float2 Perpendicular(float2 vec);
 
 bool PointInTriangle(float2 a, float2 b, float2 c, float2 p);
+
+typedef struct _IJK {
+	float3	ihat;
+	float3 jhat;
+	float3 khat;
+}IJK;
+
+class Transform {
+public:
+	float Yaw;
+	float Pitch;
+
+	Transform(float yaw = 0.0f, float pitch = 0.0f) : Yaw(yaw), Pitch(pitch) {}
+
+	float3 ToWorldPoint(float3 p) {
+		auto basic = GetBasisVectors();
+		return TransformVector(basic.ihat, basic.jhat, basic.khat, p);
+	}
+
+	IJK GetBasisVectors() const {
+		float cosYaw = cosf(Yaw);
+		float sinYaw = sinf(Yaw);
+
+		float cosPitch = cosf(Pitch);
+		float sinPitch = sinf(Pitch);
+
+		float3 ihat_yaw(cosYaw, 0.0f, sinYaw);
+		float3 jhat_yaw(0.0f, 1.0f, 0.0f);
+		float3 khat_yaw(-sinYaw, 0.0f, cosYaw);
+
+		float3 ihat_pitch(1.0f, 0.0f, 0.0f);
+		float3 jhat_pitch(0, cosPitch, -sinPitch);
+		float3 khat_pitch(0, sinPitch, cosPitch);
+
+		float3 ihat = TransformVector(ihat_yaw, jhat_yaw, khat_yaw, ihat_pitch);
+		float3 jhat = TransformVector(ihat_yaw, jhat_yaw, khat_yaw, jhat_pitch);
+		float3 khat = TransformVector(ihat_yaw, jhat_yaw, khat_yaw, khat_pitch);
+
+		return { ihat, jhat, khat };
+	}
+
+	static float3 TransformVector(float3 ihat, float3 jhat, float3 khat, float3 v) {
+		return ihat * v.x + jhat * v.y + khat * v.z;
+	}
+};

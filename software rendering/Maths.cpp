@@ -31,6 +31,6 @@ bool PointInTriangle(float2 a, float2 b, float2 c, float2 p) {
 	//cout << (sideAB && sideBC && sideCA) << ' ';
 	//cout << ((sideAB == sideBC) && (sideCA == sideAB)) << '\n';
 
-	//return sideAB && sideBC && sideCA;
-	return sideAB == sideBC && sideBC == sideCA;
+	return sideAB && sideBC && sideCA;
+	//return sideAB == sideBC && sideBC == sideCA;
 }

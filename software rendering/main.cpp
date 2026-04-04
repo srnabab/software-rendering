@@ -155,20 +155,22 @@ static void CreateTestImage() {
 	}
 }
 
-static float2 VertexToScreen(float3 vertex, float2 numPixels) {
+static float2 VertexToScreen(float3 vertex, Transform transform, float2 numPixels) {
+	float3 vertex_world = transform.ToWorldPoint(vertex);
+
 	float screenHeight_world = 5;
 	float pixelsPerWorldUnit = numPixels.y / screenHeight_world;
 
-	float2 pixelOffset = float2(vertex.x, vertex.y) * pixelsPerWorldUnit;
+	float2 pixelOffset = float2(vertex_world.x, vertex_world.y) * pixelsPerWorldUnit;
 	return numPixels / 2.0f + pixelOffset;
 }
 
-static void Render(Model& model, RenderTarget& target) {
+static void Render(Model& model, Transform& transform, RenderTarget& target) {
 	for (size_t i = 0; i < model.Points.size(); i += 3)
 	{
-		auto a = VertexToScreen(model.Points[i + 0], target.Size);
-		auto b = VertexToScreen(model.Points[i + 1], target.Size);
-		auto c = VertexToScreen(model.Points[i + 2], target.Size);
+		auto a = VertexToScreen(model.Points[i + 0], transform, target.Size);
+		auto b = VertexToScreen(model.Points[i + 1], transform, target.Size);
+		auto c = VertexToScreen(model.Points[i + 2], transform, target.Size);
 
 		//cout << a.x << ',' << a.y << ' ' << b.x << ',' << b.y << ' ' << c.x << ',' << c.y << '\n';
 
@@ -192,7 +194,7 @@ static void Render(Model& model, RenderTarget& target) {
 				if (!PointInTriangle(a, b, c, float2(static_cast<float>(x), static_cast<float>(y))))
 					continue;
 				target.Buffers[x + y * target.Width] = (static_cast<uint32_t>(model.Cols[i / 3].r) << 24) | (static_cast<uint32_t>(model.Cols[i / 3].g) << 16) |
-					(static_cast<uint32_t>(model.Cols[i / 3].b) << 8) | 0;
+					(static_cast<uint32_t>(model.Cols[i / 3].b) << 8) | static_cast<uint32_t>(255);
 			}
 		}
 	}
@@ -223,6 +225,40 @@ static void Update(float time) {
 	}
 }
 
+const std::vector<float3> DISTINCT_COLORS = {
+	{255, 0, 0},    
+	{0, 255, 0},    
+	{0, 0, 255},    
+	{255, 255, 0},  
+	{255, 0, 255},  
+	{0, 255, 255},  
+	{255, 128, 0},  
+	{128, 0, 255},  
+	{0, 128, 128},  
+	{255, 153, 204},
+	{128, 255, 0},  
+	{0, 0, 128},    
+	{153, 0, 0},    
+	{204, 255, 153},
+	{102, 51, 0},   
+	{51, 102, 204}, 
+	{255, 204, 153},
+	{0, 102, 0},   
+	{102, 102, 102},
+	{153, 153, 255},
+	{255, 102, 102},
+	{204, 204, 0}, 
+	{102, 255, 204} 
+};
+
+static float3 GenRandomColor() {
+	static int id = 0;
+
+	id = (id + 1) % DISTINCT_COLORS.size();
+
+	return DISTINCT_COLORS[id];
+}
+
 
 int main(int argc, char** argv) {
 	cout << "Hello, software rendering!" << endl;
@@ -236,18 +272,15 @@ int main(int argc, char** argv) {
 
 	auto model = LoadObjFile("box.obj");
 
-	std::random_device rd;
-	std::mt19937 gen(rd() ^ std::chrono::system_clock::now().time_since_epoch().count());
-	std::uniform_real_distribution<float> disCol(0, 255.0f);
-
 	std::vector<float3> boxCols(model.size() / 3);
 	for (size_t i = 0; i < boxCols.size(); i++)
 	{
-		boxCols[i] = float3(disCol(gen), disCol(gen), disCol(gen));
+		boxCols[i] = GenRandomColor();
 	}
 
 	auto BoxModel = Model(model, boxCols);
 	auto Target = RenderTarget(width, height);
+	auto transform = Transform();
 
 	auto lastTime = std::chrono::steady_clock::now();
 	auto currentTime = std::chrono::steady_clock::now();
@@ -255,17 +288,34 @@ int main(int argc, char** argv) {
 	auto endTime = std::chrono::steady_clock::now();
 	auto deltaTime = std::chrono::duration<float, std::milli>(endTime - currentTime);
 
+	const uint8_t* keys = mfb_get_key_buffer(window);
+
 	mfb_update_state state;
 	do {
 		endTime = std::chrono::steady_clock::now();
 		deltaTime = endTime - currentTime;
+
+		keys = mfb_get_key_buffer(window);
+
+		if (keys[MFB_KB_KEY_0]) {
+			transform.Yaw -= 0.5f * deltaTime.count() / 1000.0f;
+		}
+		if (keys[MFB_KB_KEY_1]) {
+			transform.Yaw += 0.5f * deltaTime.count() / 1000.0f;
+		}
+		if (keys[MFB_KB_KEY_2]) {
+			transform.Pitch -= 0.5f * deltaTime.count() / 1000.0f;
+		}
+		if (keys[MFB_KB_KEY_3]) {
+			transform.Pitch += 0.5f * deltaTime.count() / 1000.0f;
+		}
 
 		//Update(deltaTime.count());
 
 		currentTime = std::chrono::steady_clock::now();
 
 		memset(Target.Buffers.data(), 0, buffers.size() * sizeof(uint32_t));
-		Render(BoxModel, Target);
+		Render(BoxModel, transform, Target);
 
 		lastTime = std::chrono::steady_clock::now();
 

@@ -13,6 +13,8 @@ using namespace std;
 #include <cmath>
 #include <numbers>
 
+#include "Window.h"
+
 constexpr auto width = 1200;
 constexpr auto height = 900;
 
@@ -288,28 +290,7 @@ static void Render(Model& model, Transform& transform, RenderTarget& target, Cam
 }
 
 static void Update(float time) {
-	auto time_s = time / 1000.0f;
-	for (size_t i = 0; i < points.size(); i++)
-	{
-		points[i] = points[i] + velocities[i] * time_s;
-		if (points[i].x < 0) {
-			points[i].x = 0;
-			velocities[i].x *= -1.0f;
-		}
-		else if (points[i].x > width - 1) {
-			points[i].x = static_cast<float>(width - 1);
-			velocities[i].x *= -1.0f;
-		}
 
-		if (points[i].y < 0) {
-			points[i].y = 0;
-			velocities[i].y *= -1.0f;
-		}
-		else if (points[i].y > height - 1) {
-			points[i].y = static_cast<float>(height - 1);
-			velocities[i].y *= -1.0f;
-		}
-	}
 }
 
 static float CalculateDollyZoomFov(float fovInitial, float zPosInitial, float zPosCurrent) {
@@ -333,7 +314,7 @@ int main(int argc, char** argv) {
 	auto MonkeyModel = Model::LoadFromObj("monkey.obj");
 
 	auto Target = RenderTarget(width, height);
-	auto boxTransform = Transform(float3(-2.0f, -2.0f, 10.0f));
+	auto boxTransform = Transform(float3(0, 0, 10.0f));
 	auto monkeyTransform = Transform(float3(0, 0, 5.0f));
 	auto cam = Camera(float3(0, 0, 0));
 
@@ -346,6 +327,12 @@ int main(int argc, char** argv) {
 
 	const uint8_t* keys = mfb_get_key_buffer(window);
 
+	int currentMouseX = mfb_get_mouse_x(window);
+	int currentMouseY = mfb_get_mouse_y(window);
+
+	auto windowHandle = getActiveWindow();
+	mfb_show_cursor(window, false);
+
 	mfb_update_state state;
 	do {
 		endTime = std::chrono::steady_clock::now();
@@ -354,43 +341,44 @@ int main(int argc, char** argv) {
 
 		keys = mfb_get_key_buffer(window);
 
-		if (keys[MFB_KB_KEY_0]) {
-			boxTransform.Yaw -= 0.5f * deltaTime;
-		}
-		if (keys[MFB_KB_KEY_1]) {
-			boxTransform.Yaw += 0.5f * deltaTime;
-		}
-		if (keys[MFB_KB_KEY_2]) {
-			boxTransform.Pitch -= 0.5f * deltaTime;
-		}
-		if (keys[MFB_KB_KEY_3]) {
-			boxTransform.Pitch += 0.5f * deltaTime;
-		}
-		if (keys[MFB_KB_KEY_UP]) {
-			boxTransform.Position.z += 3.0f * deltaTime;
+		const float mouseSensitivity = 0.5f;
+		auto& camTransform = cam.transform;
 
-			cout << "Position: " << boxTransform.Position.z << " FOV: " << radToDeg(CalculateDollyZoomFov(degToRad(cam.fov), 5.0f, boxTransform.Position.z)) << '\n';
-		}
-		if (keys[MFB_KB_KEY_DOWN]) {
-			boxTransform.Position.z -= 3.0f * deltaTime;
+		currentMouseX = mfb_get_mouse_x(window);
+		currentMouseY = mfb_get_mouse_y(window);
 
-			cout << "Position: " << boxTransform.Position.z << " FOV: " << radToDeg(CalculateDollyZoomFov(degToRad(cam.fov), 5.0f, boxTransform.Position.z)) << '\n';
-		}
+		centerMouse(windowHandle, width, height);
+
+		//cout << currentMouseX << ' ' << currentMouseY << '\n';
+		
+		float2 mouseDelta = float2(static_cast<float>(currentMouseX - width / 2), static_cast<float>(currentMouseY - height / 2)) / Target.Width * mouseSensitivity;
+		//float2 mouseDelta = float2(0.0f, 0.0f);
+
+		camTransform.Pitch = clamp(camTransform.Pitch - mouseDelta.y, degToRad(-85), degToRad(85));
+		camTransform.Yaw -= mouseDelta.x;
+
+		const float camSpeed = 2.5f;
+		float3 moveDelta = float3();
+		auto camDirection = camTransform.GetBasisVectors();
+
 		if (keys[MFB_KB_KEY_W]) {
-			cam.transform.Position.z -= 1.0f * deltaTime;
+			moveDelta += camDirection.khat;
 		}
 		if (keys[MFB_KB_KEY_S]) {
-			cam.transform.Position.z += 1.0f * deltaTime;
+			moveDelta -= camDirection.khat;
 		}
 		if (keys[MFB_KB_KEY_A]) {
-			cam.transform.Position.x += 1.0f * deltaTime;
+			moveDelta -= camDirection.ihat;
 		}
 		if (keys[MFB_KB_KEY_D]) {
-			cam.transform.Position.x -= 1.0f * deltaTime;
+			moveDelta += camDirection.ihat;
 		}
 
+		camTransform.Position += float3::Normalize(moveDelta) * camSpeed * deltaTime;
+		//camTransform.Position += float3() * camSpeed * deltaTime;
+		camTransform.Position.y = 1.0f;
 
-		//Update(deltaTime.count());
+		//Update(deltaTime);
 
 		currentTime = std::chrono::steady_clock::now();
 
@@ -400,8 +388,8 @@ int main(int argc, char** argv) {
 
 		lastTime = std::chrono::steady_clock::now();
 
-		std::chrono::duration<float, milli> duration = lastTime - currentTime;
-		cout << "Frame: " << frame++ << " Time: " << duration.count() << "ms" << " delta_time: " << deltaTime << endl;
+		std::chrono::duration<float, std::milli> duration = lastTime - currentTime;
+		//cout << "Frame: " << frame++ << " Time: " << duration.count() << "ms" << " delta_time: " << deltaTime << endl;
 
 		state = mfb_update_ex(window, Target.Buffers.data(), width, height);
 

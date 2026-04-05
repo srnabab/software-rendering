@@ -135,11 +135,13 @@
     <ClCompile Include="MiniFB_cpp.cpp" />
     <ClCompile Include="MiniFB_internal.c" />
     <ClCompile Include="MiniFB_timer.c" />
+    <ClCompile Include="Window.cpp" />
     <ClCompile Include="windows\WinMiniFB.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Maths.h" />
     <ClInclude Include="MiniFB_internal.h" />
+    <ClInclude Include="Window.h" />
     <ClInclude Include="WindowData.h" />
     <ClInclude Include="windows\WindowData_Win.h" />
   </ItemGroup>

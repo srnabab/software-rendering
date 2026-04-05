@@ -42,6 +42,9 @@
     <ClCompile Include="windows\WinMiniFB.c">
       <Filter>Source Files\minifb\windows</Filter>
     </ClCompile>
+    <ClCompile Include="Window.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Maths.h">
@@ -55,6 +58,9 @@
     </ClInclude>
     <ClInclude Include="windows\WindowData_Win.h">
       <Filter>Source Files\minifb\windows</Filter>
+    </ClInclude>
+    <ClInclude Include="Window.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

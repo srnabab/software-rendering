@@ -50,12 +50,30 @@ public:
 		return float3(x + n.x, y + n.y, z + n.z);
 	}
 
+	float3& operator+=(const float3& n) {
+		x += n.x;
+		y += n.y;
+		z += n.z;
+		return *this;
+	}
+
+	float3& operator-=(const float3& n) {
+		x -= n.x;
+		y -= n.y;
+		z -= n.z;
+		return *this;
+	}
+
 	float3 operator-(const float3& n) {
 		return float3(x - n.x, y - n.y, z - n.z);
 	}
 
 	float3 operator*(const float& n) {
 		return float3(x * n, y * n, z * n);
+	}
+
+	float3 operator/(const float& n) {
+		return float3(x / n, y / n, z / n);
 	}
 
 	operator float2() const {
@@ -65,6 +83,11 @@ public:
 	static float Dot(float3 a, float3 b) {
 		return a.x * b.x + a.y * b.y + a.z * b.z;
 	};
+
+	static float3 Normalize(float3 v) {
+		if (v.x == 0 && v.y == 0 && v.z == 0) return float3(0, 0, 0);
+		return v / sqrtf(Dot(v, v));
+	}
 };
 
 float2 Perpendicular(float2 vec);
@@ -94,7 +117,8 @@ public:
 	}
 
 	float3 ToLocalPoint(float3 worldPoint) {
-		return worldPoint - Position;
+		auto basic = GetInverseBasisVectors();
+		return TransformVector(basic.ihat, basic.jhat, basic.khat, worldPoint - Position);
 	}
 
 	IJK GetBasisVectors() const {
@@ -117,6 +141,13 @@ public:
 		float3 khat = TransformVector(ihat_yaw, jhat_yaw, khat_yaw, khat_pitch);
 
 		return { ihat, jhat, khat };
+	}
+
+	IJK GetInverseBasisVectors() const {
+
+		auto hats = GetBasisVectors();
+
+		return { float3(hats.ihat.x, hats.jhat.x, hats.khat.x), float3(hats.ihat.y, hats.jhat.y, hats.khat.y), float3(hats.ihat.z, hats.jhat.z, hats.khat.z) };
 	}
 
 	static float3 TransformVector(float3 ihat, float3 jhat, float3 khat, float3 v) {

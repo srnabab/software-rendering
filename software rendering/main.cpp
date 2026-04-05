@@ -175,6 +175,23 @@ class RenderTarget {
 		}
 };
 
+static float degToRad(float degrees) {
+	return degrees * (std::numbers::pi / 180.0f);
+}
+
+static float radToDeg(float radians) {
+	return radians * (180.0f / std::numbers::pi);
+}
+
+class Camera {
+public:
+	float fov;
+	Transform transform;
+
+	Camera(float fov, Transform transform) : fov(fov), transform(transform) {}
+	Camera(Transform transform) : Camera(degToRad(60.0f), transform) {}
+};
+
 
 static void CreateTestImage() {
 	const int triangleCount = 250;
@@ -209,25 +226,28 @@ static void CreateTestImage() {
 	}
 }
 
-float3 VertexToScreen(float3 vertex, Transform transform, float2 numPixels, float fov) {
-	float3 vertex_world = transform.ToWorldPoint(vertex);
+float3 VertexToScreen(float3 vertex, Transform transform, Camera cam, float2 numPixels) {
+	float3 vertex_world = transform.ToWorldPoint(vertex); 
+	float3 vertex_view = cam.transform.ToLocalPoint(vertex_world);
 
-	float screenHeight_world = std::tanf(fov / 2) * 2;
-	float pixelsPerWorldUnit = numPixels.y / screenHeight_world / vertex_world.z;
+	float screenHeight_world = std::tanf(cam.fov / 2) * 2;
+	float pixelsPerWorldUnit = numPixels.y / screenHeight_world / vertex_view.z;
 
-	float2 pixelOffset = float2(vertex_world.x, vertex_world.y) * pixelsPerWorldUnit;
+	float2 pixelOffset = float2(vertex_view.x, vertex_view.y) * pixelsPerWorldUnit;
 	float2 vertex_screen = numPixels / 2.0f + pixelOffset;
 
-	return float3(vertex_screen.x, vertex_screen.y, vertex_world.z);
+	return float3(vertex_screen.x, vertex_screen.y, vertex_view.z);
 }
 
 
-static void Render(Model& model, Transform& transform, RenderTarget& target, float fov) {
+static void Render(Model& model, Transform& transform, RenderTarget& target, Camera cam) {
 	for (size_t i = 0; i < model.Points.size(); i += 3)
 	{
-		auto a = VertexToScreen(model.Points[i + 0], transform, target.Size, fov);
-		auto b = VertexToScreen(model.Points[i + 1], transform, target.Size, fov);
-		auto c = VertexToScreen(model.Points[i + 2], transform, target.Size, fov);
+		auto a = VertexToScreen(model.Points[i + 0], transform, cam, target.Size);
+		auto b = VertexToScreen(model.Points[i + 1], transform, cam, target.Size);
+		auto c = VertexToScreen(model.Points[i + 2], transform, cam, target.Size);
+
+		if (a.z <= 0 || b.z <= 0 || c.z <= 0) continue;
 
 		//cout << a.x << ',' << a.y << ' ' << b.x << ',' << b.y << ' ' << c.x << ',' << c.y << '\n';
 
@@ -297,13 +317,6 @@ static float CalculateDollyZoomFov(float fovInitial, float zPosInitial, float zP
 	return atanf(desiredHalfHeight) * 2;
 }
 
-static float dagToRad(float degrees) {
-	return degrees * (std::numbers::pi / 180.0f);
-}
-
-static float radToDag(float radians) {
-	return radians * (180.0f / std::numbers::pi);
-}
 
 
 int main(int argc, char** argv) {
@@ -322,44 +335,58 @@ int main(int argc, char** argv) {
 	auto Target = RenderTarget(width, height);
 	auto boxTransform = Transform(float3(-2.0f, -2.0f, 10.0f));
 	auto monkeyTransform = Transform(float3(0, 0, 5.0f));
-	float fov = 60.0f;
+	auto cam = Camera(float3(0, 0, 0));
 
 	auto lastTime = std::chrono::steady_clock::now();
 	auto currentTime = std::chrono::steady_clock::now();
 
 	auto endTime = std::chrono::steady_clock::now();
-	auto deltaTime = std::chrono::duration<float, std::milli>(endTime - currentTime);
+	auto deltaTime_ms = std::chrono::duration<float, std::milli>(endTime - currentTime);
+	float deltaTime = 0.0f;
 
 	const uint8_t* keys = mfb_get_key_buffer(window);
 
 	mfb_update_state state;
 	do {
 		endTime = std::chrono::steady_clock::now();
-		deltaTime = endTime - currentTime;
+		deltaTime_ms = endTime - currentTime;
+		deltaTime = deltaTime_ms.count() / 1000.0f;
 
 		keys = mfb_get_key_buffer(window);
 
 		if (keys[MFB_KB_KEY_0]) {
-			boxTransform.Yaw -= 0.5f * deltaTime.count() / 1000.0f;
+			boxTransform.Yaw -= 0.5f * deltaTime;
 		}
 		if (keys[MFB_KB_KEY_1]) {
-			boxTransform.Yaw += 0.5f * deltaTime.count() / 1000.0f;
+			boxTransform.Yaw += 0.5f * deltaTime;
 		}
 		if (keys[MFB_KB_KEY_2]) {
-			boxTransform.Pitch -= 0.5f * deltaTime.count() / 1000.0f;
+			boxTransform.Pitch -= 0.5f * deltaTime;
 		}
 		if (keys[MFB_KB_KEY_3]) {
-			boxTransform.Pitch += 0.5f * deltaTime.count() / 1000.0f;
+			boxTransform.Pitch += 0.5f * deltaTime;
 		}
 		if (keys[MFB_KB_KEY_UP]) {
-			boxTransform.Position.z += 3.0f * deltaTime.count() / 1000.0f;
+			boxTransform.Position.z += 3.0f * deltaTime;
 
-			cout << "Position: " << boxTransform.Position.z << " FOV: " << radToDag(CalculateDollyZoomFov(dagToRad(fov), 5.0f, boxTransform.Position.z)) << '\n';
+			cout << "Position: " << boxTransform.Position.z << " FOV: " << radToDeg(CalculateDollyZoomFov(degToRad(cam.fov), 5.0f, boxTransform.Position.z)) << '\n';
 		}
 		if (keys[MFB_KB_KEY_DOWN]) {
-			boxTransform.Position.z -= 3.0f * deltaTime.count() / 1000.0f;
+			boxTransform.Position.z -= 3.0f * deltaTime;
 
-			cout << "Position: " << boxTransform.Position.z << " FOV: " << radToDag(CalculateDollyZoomFov(dagToRad(fov), 5.0f, boxTransform.Position.z)) << '\n';
+			cout << "Position: " << boxTransform.Position.z << " FOV: " << radToDeg(CalculateDollyZoomFov(degToRad(cam.fov), 5.0f, boxTransform.Position.z)) << '\n';
+		}
+		if (keys[MFB_KB_KEY_W]) {
+			cam.transform.Position.z -= 1.0f * deltaTime;
+		}
+		if (keys[MFB_KB_KEY_S]) {
+			cam.transform.Position.z += 1.0f * deltaTime;
+		}
+		if (keys[MFB_KB_KEY_A]) {
+			cam.transform.Position.x += 1.0f * deltaTime;
+		}
+		if (keys[MFB_KB_KEY_D]) {
+			cam.transform.Position.x -= 1.0f * deltaTime;
 		}
 
 
@@ -368,13 +395,13 @@ int main(int argc, char** argv) {
 		currentTime = std::chrono::steady_clock::now();
 
 		Target.Clear();
-		Render(BoxModel, boxTransform, Target, CalculateDollyZoomFov(dagToRad(fov), 10.0f, boxTransform.Position.z));
-		Render(MonkeyModel, monkeyTransform, Target, CalculateDollyZoomFov(dagToRad(fov), 5.0f, monkeyTransform.Position.z));
+		Render(BoxModel, boxTransform, Target, cam);
+		Render(MonkeyModel, monkeyTransform, Target, cam);
 
 		lastTime = std::chrono::steady_clock::now();
 
 		std::chrono::duration<float, milli> duration = lastTime - currentTime;
-		//cout << "Frame: " << frame++ << " Time: " << duration.count() << "ms" << " delta_time: " << deltaTime.count() << endl;
+		cout << "Frame: " << frame++ << " Time: " << duration.count() << "ms" << " delta_time: " << deltaTime << endl;
 
 		state = mfb_update_ex(window, Target.Buffers.data(), width, height);
 

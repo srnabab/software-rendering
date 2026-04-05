@@ -50,6 +50,10 @@ public:
 		return float3(x + n.x, y + n.y, z + n.z);
 	}
 
+	float3 operator-(const float3& n) {
+		return float3(x - n.x, y - n.y, z - n.z);
+	}
+
 	float3 operator*(const float& n) {
 		return float3(x * n, y * n, z * n);
 	}
@@ -87,6 +91,10 @@ public:
 	float3 ToWorldPoint(float3 p) {
 		auto basic = GetBasisVectors();
 		return TransformVector(basic.ihat, basic.jhat, basic.khat, p) + Position;
+	}
+
+	float3 ToLocalPoint(float3 worldPoint) {
+		return worldPoint - Position;
 	}
 
 	IJK GetBasisVectors() const {

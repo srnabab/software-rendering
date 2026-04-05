@@ -67,12 +67,14 @@ class Transform {
 public:
 	float Yaw;
 	float Pitch;
+	float3 Position;
 
-	Transform(float yaw = 0.0f, float pitch = 0.0f) : Yaw(yaw), Pitch(pitch) {}
+	Transform(float yaw, float pitch, float3 positon): Yaw(yaw), Pitch(pitch), Position(positon) {}
+	Transform(float3 position) : Transform(0.0f, 0.0f, position){}
 
 	float3 ToWorldPoint(float3 p) {
 		auto basic = GetBasisVectors();
-		return TransformVector(basic.ihat, basic.jhat, basic.khat, p);
+		return TransformVector(basic.ihat, basic.jhat, basic.khat, p) + Position;
 	}
 
 	IJK GetBasisVectors() const {

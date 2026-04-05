@@ -11,6 +11,7 @@ using namespace std;
 #include <chrono>
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 constexpr auto width = 800;
 constexpr auto height = 600;
@@ -155,22 +156,22 @@ static void CreateTestImage() {
 	}
 }
 
-static float2 VertexToScreen(float3 vertex, Transform transform, float2 numPixels) {
+static float2 VertexToScreen(float3 vertex, Transform transform, float2 numPixels, float fov) {
 	float3 vertex_world = transform.ToWorldPoint(vertex);
 
-	float screenHeight_world = 5;
-	float pixelsPerWorldUnit = numPixels.y / screenHeight_world;
+	float screenHeight_world = std::tanf(fov / 2) * 2;
+	float pixelsPerWorldUnit = numPixels.y / screenHeight_world / vertex_world.z;
 
 	float2 pixelOffset = float2(vertex_world.x, vertex_world.y) * pixelsPerWorldUnit;
 	return numPixels / 2.0f + pixelOffset;
 }
 
-static void Render(Model& model, Transform& transform, RenderTarget& target) {
+static void Render(Model& model, Transform& transform, RenderTarget& target, float fov) {
 	for (size_t i = 0; i < model.Points.size(); i += 3)
 	{
-		auto a = VertexToScreen(model.Points[i + 0], transform, target.Size);
-		auto b = VertexToScreen(model.Points[i + 1], transform, target.Size);
-		auto c = VertexToScreen(model.Points[i + 2], transform, target.Size);
+		auto a = VertexToScreen(model.Points[i + 0], transform, target.Size, fov);
+		auto b = VertexToScreen(model.Points[i + 1], transform, target.Size, fov);
+		auto c = VertexToScreen(model.Points[i + 2], transform, target.Size, fov);
 
 		//cout << a.x << ',' << a.y << ' ' << b.x << ',' << b.y << ' ' << c.x << ',' << c.y << '\n';
 
@@ -193,8 +194,8 @@ static void Render(Model& model, Transform& transform, RenderTarget& target) {
 			{
 				if (!PointInTriangle(a, b, c, float2(static_cast<float>(x), static_cast<float>(y))))
 					continue;
-				target.Buffers[x + y * target.Width] = (static_cast<uint32_t>(model.Cols[i / 3].r) << 24) | (static_cast<uint32_t>(model.Cols[i / 3].g) << 16) |
-					(static_cast<uint32_t>(model.Cols[i / 3].b) << 8) | static_cast<uint32_t>(255);
+				target.Buffers[x + y * target.Width] = (static_cast<uint32_t>(model.Cols[i / 3].r) << 16) | (static_cast<uint32_t>(model.Cols[i / 3].g) << 8) |
+					(static_cast<uint32_t>(model.Cols[i / 3].b) << 0);
 			}
 		}
 	}
@@ -254,9 +255,22 @@ const std::vector<float3> DISTINCT_COLORS = {
 static float3 GenRandomColor() {
 	static int id = 0;
 
-	id = (id + 1) % DISTINCT_COLORS.size();
+	id = (id + 3) % DISTINCT_COLORS.size();
 
 	return DISTINCT_COLORS[id];
+}
+
+static float CalculateDollyZoomFov(float fovInitial, float zPosInitial, float zPosCurrent) {
+	float desiredHalfHeight = std::tanf(fovInitial / 2) * zPosInitial  / zPosCurrent;
+	return atanf(desiredHalfHeight) * 2;
+}
+
+static float dagToRad(float degrees) {
+	return degrees * (std::numbers::pi / 180.0f);
+}
+
+static float radToDag(float radians) {
+	return radians * (180.0f / std::numbers::pi);
 }
 
 
@@ -280,7 +294,8 @@ int main(int argc, char** argv) {
 
 	auto BoxModel = Model(model, boxCols);
 	auto Target = RenderTarget(width, height);
-	auto transform = Transform();
+	auto transform = Transform(float3(0, 0, 5.0f));
+	float fov = 60.0f;
 
 	auto lastTime = std::chrono::steady_clock::now();
 	auto currentTime = std::chrono::steady_clock::now();
@@ -309,18 +324,29 @@ int main(int argc, char** argv) {
 		if (keys[MFB_KB_KEY_3]) {
 			transform.Pitch += 0.5f * deltaTime.count() / 1000.0f;
 		}
+		if (keys[MFB_KB_KEY_UP]) {
+			transform.Position.z += 3.0f * deltaTime.count() / 1000.0f;
+
+			cout << "Position: " << transform.Position.z << " FOV: " << radToDag(CalculateDollyZoomFov(dagToRad(fov), 5.0f, transform.Position.z)) << '\n';
+		}
+		if (keys[MFB_KB_KEY_DOWN]) {
+			transform.Position.z -= 3.0f * deltaTime.count() / 1000.0f;
+
+			cout << "Position: " << transform.Position.z << " FOV: " << radToDag(CalculateDollyZoomFov(dagToRad(fov), 5.0f, transform.Position.z)) << '\n';
+		}
+
 
 		//Update(deltaTime.count());
 
 		currentTime = std::chrono::steady_clock::now();
 
 		memset(Target.Buffers.data(), 0, buffers.size() * sizeof(uint32_t));
-		Render(BoxModel, transform, Target);
+		Render(BoxModel, transform, Target, CalculateDollyZoomFov(dagToRad(fov), 5.0f, transform.Position.z));
 
 		lastTime = std::chrono::steady_clock::now();
 
 		std::chrono::duration<float, milli> duration = lastTime - currentTime;
-		cout << "Frame: " << frame++ << " Time: " << duration.count() << "ms" << " delta_time: " << deltaTime.count() << endl;
+		//cout << "Frame: " << frame++ << " Time: " << duration.count() << "ms" << " delta_time: " << deltaTime.count() << endl;
 
 		state = mfb_update_ex(window, Target.Buffers.data(), width, height);
 

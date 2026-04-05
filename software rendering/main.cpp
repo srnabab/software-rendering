@@ -276,7 +276,7 @@ static void Render(Model& model, Transform& transform, RenderTarget& target, Cam
 				if (PointInTriangle((float2)a, (float2)b, (float2)c, p, weights)) {
 
 					float3 depths = float3(a.z, b.z, c.z);
-					float depth = float3::Dot(depths, weights);
+					float depth = 1 / float3::Dot(1 / depths, weights);
 
 					if (depth > target.DepthBuffer[x + y * target.Width]) continue;
 
@@ -311,10 +311,20 @@ int main(int argc, char** argv) {
 	image = std::vector<float3>(width * height, float3(0.0f, 0.0f, 0.0f));
 
 	auto BoxModel = Model::LoadFromObj("box.obj");
+	auto BoxModel2 = BoxModel;
+	auto BoxModel3 = BoxModel;
+	auto BoxModel4 = BoxModel;
+
+	auto PlaneModel = Model::LoadFromObj("plane.obj");
+
 	auto MonkeyModel = Model::LoadFromObj("monkey.obj");
 
 	auto Target = RenderTarget(width, height);
-	auto boxTransform = Transform(float3(0, 0, 10.0f));
+	auto boxTransform = Transform(float3(-5.0f, 0, 10.0f));
+	auto boxTransform2 = Transform(float3(5.0f, 0.0f, 10.0f));
+	auto boxTransform3 = Transform(float3(5.0f, 0, 0.0f));
+	auto boxTransform4 = Transform(float3(-5.0f, 0.0f, 0.0f));
+	auto planeTransform = Transform(float3(0, 1.0f, 0));
 	auto monkeyTransform = Transform(float3(0, 0, 5.0f));
 	auto cam = Camera(float3(0, 0, 0));
 
@@ -376,7 +386,7 @@ int main(int argc, char** argv) {
 
 		camTransform.Position += float3::Normalize(moveDelta) * camSpeed * deltaTime;
 		//camTransform.Position += float3() * camSpeed * deltaTime;
-		camTransform.Position.y = 1.0f;
+		camTransform.Position.y = -1.0f;
 
 		//Update(deltaTime);
 
@@ -384,6 +394,10 @@ int main(int argc, char** argv) {
 
 		Target.Clear();
 		Render(BoxModel, boxTransform, Target, cam);
+		Render(BoxModel2, boxTransform2, Target, cam);
+		Render(BoxModel3, boxTransform3, Target, cam);
+		Render(BoxModel4, boxTransform4, Target, cam);
+		Render(PlaneModel, planeTransform, Target, cam);
 		Render(MonkeyModel, monkeyTransform, Target, cam);
 
 		lastTime = std::chrono::steady_clock::now();

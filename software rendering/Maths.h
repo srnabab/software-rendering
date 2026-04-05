@@ -72,6 +72,14 @@ public:
 		return float3(x * n, y * n, z * n);
 	}
 
+	float3& operator/=(float s) {
+		float inv = 1.0f / s;
+		x *= inv;
+		y *= inv;
+		z *= inv;
+		return *this;
+	}
+
 	float3 operator/(const float& n) {
 		return float3(x / n, y / n, z / n);
 	}
@@ -89,6 +97,14 @@ public:
 		return v / sqrtf(Dot(v, v));
 	}
 };
+
+inline float3 operator/(const float3& v1, const float3& v2) {
+	return { v1.x / v2.x, v1.y / v2.y, v1.z / v2.z };
+}
+
+inline float3 operator/(float s, const float3& v) {
+	return { s / v.x, s / v.y, s / v.z };
+}
 
 float2 Perpendicular(float2 vec);
 

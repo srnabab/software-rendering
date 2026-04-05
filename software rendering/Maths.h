@@ -2,26 +2,6 @@
 
 #include <math.h>
 
-class float3
-{
-	public:
-		union {
-			struct { float x, y, z; };
-			struct { float r, g, b; };
-			float data[3];
-		};
-
-	float3(float x = 0.0f, float y = 0.0f, float z = 0.0f) : x(x), y(y), z(z) {}
-
-	float3 operator+(const float3 &n) {
-		return float3(x + n.x, y + n.y, z + n.z);
-	}
-
-	float3 operator*(const float& n) {
-		return float3(x * n, y * n, z * n);
-	}
-};
-
 class float2
 {
 	public:
@@ -48,14 +28,46 @@ class float2
 		return float2(x * n, y * n);
 	}
 
+	static float Dot(float2 a, float2 b) {
+		return a.x * b.x + a.y * b.y;
+	};
+
 };
 
 
-float Dot(float2 a, float2 b);
+class float3
+{
+public:
+	union {
+		struct { float x, y, z; };
+		struct { float r, g, b; };
+		float data[3];
+	};
+
+	float3(float x = 0.0f, float y = 0.0f, float z = 0.0f) : x(x), y(y), z(z) {}
+
+	float3 operator+(const float3& n) {
+		return float3(x + n.x, y + n.y, z + n.z);
+	}
+
+	float3 operator*(const float& n) {
+		return float3(x * n, y * n, z * n);
+	}
+
+	operator float2() const {
+		return float2(x, y);
+	}
+
+	static float Dot(float3 a, float3 b) {
+		return a.x * b.x + a.y * b.y + a.z * b.z;
+	};
+};
 
 float2 Perpendicular(float2 vec);
 
-bool PointInTriangle(float2 a, float2 b, float2 c, float2 p);
+float SignedTriangleArea(float2 a, float2 b, float2 c);
+bool PointInTriangle(float2 a, float2 b, float2 c, float2 p, float3& out);
+
 
 typedef struct _IJK {
 	float3	ihat;

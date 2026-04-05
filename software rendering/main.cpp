@@ -37,9 +37,16 @@ class RenderTarget {
 		uint32_t Width;
 		uint32_t Height;
 		float2 Size = float2(Width, Height);
-		std::vector<uint32_t> Buffers;
 
-		RenderTarget(uint32_t width, uint32_t height) : Width(width), Height(height), Buffers(width* height, 0) {}
+		std::vector<uint32_t> Buffers;
+		std::vector<float> DepthBuffer;
+
+		RenderTarget(uint32_t width, uint32_t height) : Width(width), Height(height), Buffers(width* height, 0), DepthBuffer(width * height, 10000000000.0f) {}
+
+		void Clear() {
+			memset(Buffers.data(), 0, Buffers.size() * sizeof(uint32_t));
+			std::fill(DepthBuffer.begin(), DepthBuffer.end(), 10000000000.0f);
+		}
 };
 
 static std::vector<float3> LoadObjFile(const std::string& filename) {
@@ -156,15 +163,18 @@ static void CreateTestImage() {
 	}
 }
 
-static float2 VertexToScreen(float3 vertex, Transform transform, float2 numPixels, float fov) {
+float3 VertexToScreen(float3 vertex, Transform transform, float2 numPixels, float fov) {
 	float3 vertex_world = transform.ToWorldPoint(vertex);
 
 	float screenHeight_world = std::tanf(fov / 2) * 2;
 	float pixelsPerWorldUnit = numPixels.y / screenHeight_world / vertex_world.z;
 
 	float2 pixelOffset = float2(vertex_world.x, vertex_world.y) * pixelsPerWorldUnit;
-	return numPixels / 2.0f + pixelOffset;
+	float2 vertex_screen = numPixels / 2.0f + pixelOffset;
+
+	return float3(vertex_screen.x, vertex_screen.y, vertex_world.z);
 }
+
 
 static void Render(Model& model, Transform& transform, RenderTarget& target, float fov) {
 	for (size_t i = 0; i < model.Points.size(); i += 3)
@@ -192,10 +202,20 @@ static void Render(Model& model, Transform& transform, RenderTarget& target, flo
 		{
 			for (size_t x = blockStartX; x < blockEndX; x++)
 			{
-				if (!PointInTriangle(a, b, c, float2(static_cast<float>(x), static_cast<float>(y))))
-					continue;
-				target.Buffers[x + y * target.Width] = (static_cast<uint32_t>(model.Cols[i / 3].r) << 16) | (static_cast<uint32_t>(model.Cols[i / 3].g) << 8) |
-					(static_cast<uint32_t>(model.Cols[i / 3].b) << 0);
+				float2 p = float2(static_cast<float>(x), static_cast<float>(y));
+				float3 weights;
+
+				if (PointInTriangle((float2)a, (float2)b, (float2)c, p, weights)) {
+
+					float3 depths = float3(a.z, b.z, c.z);
+					float depth = float3::Dot(depths, weights);
+
+					if (depth > target.DepthBuffer[x + y * target.Width]) continue;
+
+					target.Buffers[x + y * target.Width] = (static_cast<uint32_t>(model.Cols[i / 3].r) << 16) | (static_cast<uint32_t>(model.Cols[i / 3].g) << 8) |
+						(static_cast<uint32_t>(model.Cols[i / 3].b) << 0);
+					target.DepthBuffer[x + y * target.Width] = depth;
+				}
 			}
 		}
 	}
@@ -284,7 +304,7 @@ int main(int argc, char** argv) {
 	buffers = std::vector<uint32_t>(width * height, 0);
 	image = std::vector<float3>(width * height, float3(0.0f, 0.0f, 0.0f));
 
-	auto model = LoadObjFile("box.obj");
+	auto model = LoadObjFile("monkey.obj");
 
 	std::vector<float3> boxCols(model.size() / 3);
 	for (size_t i = 0; i < boxCols.size(); i++)
@@ -340,7 +360,7 @@ int main(int argc, char** argv) {
 
 		currentTime = std::chrono::steady_clock::now();
 
-		memset(Target.Buffers.data(), 0, buffers.size() * sizeof(uint32_t));
+		Target.Clear();
 		Render(BoxModel, transform, Target, CalculateDollyZoomFov(dagToRad(fov), 5.0f, transform.Position.z));
 
 		lastTime = std::chrono::steady_clock::now();

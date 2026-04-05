@@ -4,33 +4,29 @@
 
 using namespace std;
 
-float Dot(float2 a, float2 b) {
-	return a.x * b.x + a.y * b.y;
-}
 
 float2 Perpendicular(float2 vec) {
 	return float2(vec.y, -vec.x);
 }
 
-static bool PointOnRightSideOfLine(float2 a, float2 b, float2 p) {
-	float2 ap = p - a;
-	float2 abPerp = Perpendicular(b - a);
-
-	//cout << p.x << p.y << '\n' << a.x << a.y << '\n' << ap.x << ap.y << '\n';
-	//cout << Dot(ap, abPerp) << '\n';
-
-	return (Dot(ap, abPerp) >= 0);
+float SignedTriangleArea(float2 a, float2 b, float2 c) {
+	float2 ac = c - a;
+	float2 abPerb = Perpendicular(b - a);
+	return float2::Dot(ac, abPerb) / 2;
 }
 
-bool PointInTriangle(float2 a, float2 b, float2 c, float2 p) {
-	bool sideAB = PointOnRightSideOfLine(a, b, p);
-	bool sideBC = PointOnRightSideOfLine(b, c, p);
-	bool sideCA = PointOnRightSideOfLine(c, a, p);
+bool PointInTriangle(float2 a, float2 b, float2 c, float2 p, float3& weights) {
+	float areaABP = SignedTriangleArea(a, b, p);
+	float areaBCP = SignedTriangleArea(b, c, p);
+	float areaCAP = SignedTriangleArea(c, a, p);
 
-	//cout << sideAB << ' ' << sideBC << ' ' << sideCA << ' ';
-	//cout << (sideAB && sideBC && sideCA) << ' ';
-	//cout << ((sideAB == sideBC) && (sideCA == sideAB)) << '\n';
+	bool inTri = areaABP >= 0 && areaBCP >= 0 && areaCAP >= 0;
 
-	return sideAB && sideBC && sideCA;
-	//return sideAB == sideBC && sideBC == sideCA;
+	float invAreaSum = 1 / (areaABP + areaBCP + areaCAP);
+	float weightA = areaBCP * invAreaSum;
+	float weightB = areaCAP * invAreaSum;
+	float weightc = areaABP * invAreaSum;
+	weights = float3(weightA, weightB, weightc);
+
+	return inTri;
 }

@@ -13,8 +13,8 @@ using namespace std;
 #include <cmath>
 #include <numbers>
 
-constexpr auto width = 800;
-constexpr auto height = 600;
+constexpr auto width = 1200;
+constexpr auto height = 900;
 
 std::vector<float2> points;
 std::vector<float2> velocities;
@@ -24,30 +24,6 @@ std::vector<uint32_t> buffers;
 
 uint32_t frame = 0;
 
-class Model {
-	public:
-		std::vector<float3>Points;
-		std::vector<float3>Cols;
-
-		Model(const std::vector<float3>& points, const std::vector<float3>& cols) : Points(points), Cols(cols) {}
-};
-
-class RenderTarget {
-	public:
-		uint32_t Width;
-		uint32_t Height;
-		float2 Size = float2(Width, Height);
-
-		std::vector<uint32_t> Buffers;
-		std::vector<float> DepthBuffer;
-
-		RenderTarget(uint32_t width, uint32_t height) : Width(width), Height(height), Buffers(width* height, 0), DepthBuffer(width * height, 10000000000.0f) {}
-
-		void Clear() {
-			memset(Buffers.data(), 0, Buffers.size() * sizeof(uint32_t));
-			std::fill(DepthBuffer.begin(), DepthBuffer.end(), 10000000000.0f);
-		}
-};
 
 static std::vector<float3> LoadObjFile(const std::string& filename) {
 	std::vector<float3> allPoints;
@@ -81,7 +57,7 @@ static std::vector<float3> LoadObjFile(const std::string& filename) {
 
 					if (nextSpace == current - 1) {
 						faceIndexGroups.push_back(line.substr(current));
-						break; 
+						break;
 					}
 
 					faceIndexGroups.push_back(line.substr(current, nextSpace - current));
@@ -129,6 +105,76 @@ static std::vector<float3> LoadObjFile(const std::string& filename) {
 
 	return trianglePoints;
 }
+
+const std::vector<float3> DISTINCT_COLORS = {
+	{255, 0, 0},
+	{0, 255, 0},
+	{0, 0, 255},
+	{255, 255, 0},
+	{255, 0, 255},
+	{0, 255, 255},
+	{255, 128, 0},
+	{128, 0, 255},
+	{0, 128, 128},
+	{255, 153, 204},
+	{128, 255, 0},
+	{0, 0, 128},
+	{153, 0, 0},
+	{204, 255, 153},
+	{102, 51, 0},
+	{51, 102, 204},
+	{255, 204, 153},
+	{0, 102, 0},
+	{102, 102, 102},
+	{153, 153, 255},
+	{255, 102, 102},
+	{204, 204, 0},
+	{102, 255, 204}
+};
+
+static float3 GenRandomColor() {
+	static int id = 0;
+
+	id = (id + 3) % DISTINCT_COLORS.size();
+
+	return DISTINCT_COLORS[id];
+}
+
+class Model {
+	public:
+		std::vector<float3>Points;
+		std::vector<float3>Cols;
+
+		Model(const std::vector<float3>& points, const std::vector<float3>& cols) : Points(points), Cols(cols) {}
+
+		static Model LoadFromObj(const std::string& filename) {
+			auto points = LoadObjFile(filename);
+			std::vector<float3> cols(points.size() / 3);
+			for (size_t i = 0; i < cols.size(); i++)
+			{
+				cols[i] = GenRandomColor();
+			}
+			return Model(points, cols);
+		}
+};
+
+class RenderTarget {
+	public:
+		uint32_t Width;
+		uint32_t Height;
+		float2 Size = float2(Width, Height);
+
+		std::vector<uint32_t> Buffers;
+		std::vector<float> DepthBuffer;
+
+		RenderTarget(uint32_t width, uint32_t height) : Width(width), Height(height), Buffers(width* height, 0), DepthBuffer(width * height, 10000000000.0f) {}
+
+		void Clear() {
+			memset(Buffers.data(), 0, Buffers.size() * sizeof(uint32_t));
+			std::fill(DepthBuffer.begin(), DepthBuffer.end(), 10000000000.0f);
+		}
+};
+
 
 static void CreateTestImage() {
 	const int triangleCount = 250;
@@ -246,40 +292,6 @@ static void Update(float time) {
 	}
 }
 
-const std::vector<float3> DISTINCT_COLORS = {
-	{255, 0, 0},    
-	{0, 255, 0},    
-	{0, 0, 255},    
-	{255, 255, 0},  
-	{255, 0, 255},  
-	{0, 255, 255},  
-	{255, 128, 0},  
-	{128, 0, 255},  
-	{0, 128, 128},  
-	{255, 153, 204},
-	{128, 255, 0},  
-	{0, 0, 128},    
-	{153, 0, 0},    
-	{204, 255, 153},
-	{102, 51, 0},   
-	{51, 102, 204}, 
-	{255, 204, 153},
-	{0, 102, 0},   
-	{102, 102, 102},
-	{153, 153, 255},
-	{255, 102, 102},
-	{204, 204, 0}, 
-	{102, 255, 204} 
-};
-
-static float3 GenRandomColor() {
-	static int id = 0;
-
-	id = (id + 3) % DISTINCT_COLORS.size();
-
-	return DISTINCT_COLORS[id];
-}
-
 static float CalculateDollyZoomFov(float fovInitial, float zPosInitial, float zPosCurrent) {
 	float desiredHalfHeight = std::tanf(fovInitial / 2) * zPosInitial  / zPosCurrent;
 	return atanf(desiredHalfHeight) * 2;
@@ -304,17 +316,12 @@ int main(int argc, char** argv) {
 	buffers = std::vector<uint32_t>(width * height, 0);
 	image = std::vector<float3>(width * height, float3(0.0f, 0.0f, 0.0f));
 
-	auto model = LoadObjFile("monkey.obj");
+	auto BoxModel = Model::LoadFromObj("box.obj");
+	auto MonkeyModel = Model::LoadFromObj("monkey.obj");
 
-	std::vector<float3> boxCols(model.size() / 3);
-	for (size_t i = 0; i < boxCols.size(); i++)
-	{
-		boxCols[i] = GenRandomColor();
-	}
-
-	auto BoxModel = Model(model, boxCols);
 	auto Target = RenderTarget(width, height);
-	auto transform = Transform(float3(0, 0, 5.0f));
+	auto boxTransform = Transform(float3(-2.0f, -2.0f, 10.0f));
+	auto monkeyTransform = Transform(float3(0, 0, 5.0f));
 	float fov = 60.0f;
 
 	auto lastTime = std::chrono::steady_clock::now();
@@ -333,26 +340,26 @@ int main(int argc, char** argv) {
 		keys = mfb_get_key_buffer(window);
 
 		if (keys[MFB_KB_KEY_0]) {
-			transform.Yaw -= 0.5f * deltaTime.count() / 1000.0f;
+			boxTransform.Yaw -= 0.5f * deltaTime.count() / 1000.0f;
 		}
 		if (keys[MFB_KB_KEY_1]) {
-			transform.Yaw += 0.5f * deltaTime.count() / 1000.0f;
+			boxTransform.Yaw += 0.5f * deltaTime.count() / 1000.0f;
 		}
 		if (keys[MFB_KB_KEY_2]) {
-			transform.Pitch -= 0.5f * deltaTime.count() / 1000.0f;
+			boxTransform.Pitch -= 0.5f * deltaTime.count() / 1000.0f;
 		}
 		if (keys[MFB_KB_KEY_3]) {
-			transform.Pitch += 0.5f * deltaTime.count() / 1000.0f;
+			boxTransform.Pitch += 0.5f * deltaTime.count() / 1000.0f;
 		}
 		if (keys[MFB_KB_KEY_UP]) {
-			transform.Position.z += 3.0f * deltaTime.count() / 1000.0f;
+			boxTransform.Position.z += 3.0f * deltaTime.count() / 1000.0f;
 
-			cout << "Position: " << transform.Position.z << " FOV: " << radToDag(CalculateDollyZoomFov(dagToRad(fov), 5.0f, transform.Position.z)) << '\n';
+			cout << "Position: " << boxTransform.Position.z << " FOV: " << radToDag(CalculateDollyZoomFov(dagToRad(fov), 5.0f, boxTransform.Position.z)) << '\n';
 		}
 		if (keys[MFB_KB_KEY_DOWN]) {
-			transform.Position.z -= 3.0f * deltaTime.count() / 1000.0f;
+			boxTransform.Position.z -= 3.0f * deltaTime.count() / 1000.0f;
 
-			cout << "Position: " << transform.Position.z << " FOV: " << radToDag(CalculateDollyZoomFov(dagToRad(fov), 5.0f, transform.Position.z)) << '\n';
+			cout << "Position: " << boxTransform.Position.z << " FOV: " << radToDag(CalculateDollyZoomFov(dagToRad(fov), 5.0f, boxTransform.Position.z)) << '\n';
 		}
 
 
@@ -361,7 +368,8 @@ int main(int argc, char** argv) {
 		currentTime = std::chrono::steady_clock::now();
 
 		Target.Clear();
-		Render(BoxModel, transform, Target, CalculateDollyZoomFov(dagToRad(fov), 5.0f, transform.Position.z));
+		Render(BoxModel, boxTransform, Target, CalculateDollyZoomFov(dagToRad(fov), 10.0f, boxTransform.Position.z));
+		Render(MonkeyModel, monkeyTransform, Target, CalculateDollyZoomFov(dagToRad(fov), 5.0f, monkeyTransform.Position.z));
 
 		lastTime = std::chrono::steady_clock::now();
 

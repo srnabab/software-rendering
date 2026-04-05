@@ -22,11 +22,12 @@ bool PointInTriangle(float2 a, float2 b, float2 c, float2 p, float3& weights) {
 
 	bool inTri = areaABP >= 0 && areaBCP >= 0 && areaCAP >= 0;
 
-	float invAreaSum = 1 / (areaABP + areaBCP + areaCAP);
+	float totalArea = (areaABP + areaBCP + areaCAP);
+	float invAreaSum = 1 / totalArea;
 	float weightA = areaBCP * invAreaSum;
 	float weightB = areaCAP * invAreaSum;
 	float weightc = areaABP * invAreaSum;
 	weights = float3(weightA, weightB, weightc);
 
-	return inTri;
+	return inTri && totalArea > 0;
 }

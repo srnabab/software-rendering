@@ -135,6 +135,8 @@
     <ClCompile Include="MiniFB_cpp.cpp" />
     <ClCompile Include="MiniFB_internal.c" />
     <ClCompile Include="MiniFB_timer.c" />
+    <ClCompile Include="shaders.h" />
+    <ClCompile Include="stb_image_impl.cpp" />
     <ClCompile Include="Window.cpp" />
     <ClCompile Include="windows\WinMiniFB.c" />
   </ItemGroup>

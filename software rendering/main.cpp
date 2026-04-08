@@ -1,7 +1,6 @@
 #include <iostream>
 using namespace std;
 
-#include "Maths.h"
 #include <vector>
 #include <fstream>
 #include <string>
@@ -14,13 +13,10 @@ using namespace std;
 #include <numbers>
 
 #include "Window.h"
+#include "shaders.h"
 
-#define STB_IMAGE_IMPLEMENTATION
-#define STBI_NO_STDIO
-#include "stb_image.h"
-
-constexpr auto width = 1200;
-constexpr auto height = 900;
+constexpr auto width = 800;
+constexpr auto height = 600;
 
 std::vector<float2> points;
 std::vector<float2> velocities;
@@ -29,96 +25,6 @@ std::vector<float3> image;
 std::vector<uint32_t> buffers;
 
 uint32_t frame = 0;
-
-//class Shader {
-//public:
-//	virtual float3 PixelColour(float2 texCoord, float3 normal) = 0;
-//};
-
-class Texture {
-public:
-	uint32_t Width;
-	uint32_t Height;
-	float fWidthMinus1;
-	float fHeightMinus1;
-	std::vector<float3> image;
-
-	Texture(uint32_t width, uint32_t height, const std::vector<float3>& image) : Width(width), Height(height), 
-		image(image), fWidthMinus1(static_cast<float>(width - 1)), fHeightMinus1(static_cast<float>(height - 1)){}
-
-	float3 Sample(float2& texCoord) {
-		texCoord = float2::Saturate(texCoord);
-
-		//auto x = std::lroundf(texCoord.x * (Width - 1));
-		//auto y = std::lroundf(texCoord.y * (Height - 1));
-
-		auto x = static_cast<int>(texCoord.x * fWidthMinus1);
-		auto y = static_cast<int>(texCoord.y * fHeightMinus1);
-
-		//cout << x << ' ' << y << '\n';
-
-		//return this->image[y * Width + x];
-		return image[y * Width + x];
-	}
-};
-
-class TextureShader{
-public:
-	Texture texture;
-
-	TextureShader(Texture texture) : texture(texture) {}
-
-	float3 PixelColour(float2& texCoord, float3& normal) {
-		normal = float3::Normalize(normal);
-		return (normal + float3(1, 1, 1)) * 0.5f;
-	}
-
-	//float3 PixelColour(float2& texCoord, float3& normal) {
-	//	return texture.Sample(texCoord);
-	//}
-};
-
-class LitShader{
-public:
-	Texture texture;
-
-	LitShader(Texture texture) : texture(texture) {}
-
-	float3 PixelColour(float2 texCoord, float3 normal) {
-		normal = float3::Normalize(normal);
-		return (normal + float3(1, 1, 1)) * 0.5f;
-	}
-};
-
-static TextureShader LoadPngFile(const std::string& filename) {
-	cout << "Loading texture: " << filename << '\n';
-	std::ifstream file(filename, std::ios::binary | std::ios::ate);
-
-	if (file.is_open()) {
-		auto size = file.tellg();
-
-		file.seekg(0, std::ios::beg);
-
-		std::vector<unsigned char> buffer(size);
-		file.read((char*)buffer.data(), size);
-
-		int width = 0;
-		int height = 0;
-		int channel = 0;
-
-		auto mem = stbi_load_from_memory(buffer.data(), size, &width, &height, &channel, 0);
-		std::vector<float3> image(width * height);
-
-		for (size_t i = 0; i < width * height * channel; i++)
-		{
-			image[i / channel].data[i % channel] = mem[i];
-		}
-
-		return TextureShader(Texture(width, height, image));
-	}
-
-	std::abort();
-}
 
 struct ObjVertex {
 	std::vector<float3> position;
@@ -192,47 +98,147 @@ static ObjVertex LoadObjFile(const std::string& filename) {
 				{
 					auto currentSlash = 0;
 					int times = 0;
-					while (currentSlash <= faceIndexGroups[i].size()) {
-						auto nextSlash = faceIndexGroups[i].substr(currentSlash).find('/') + currentSlash;
 
-						if (times == 3) break;
+					if (faceIndexGroups[i].find("//") != std::string::npos) {
+						int indexs[2];
+						indexs[0] = stoi(faceIndexGroups[i].substr(0, faceIndexGroups[i].find("/")));
+						indexs[1] = stoi(faceIndexGroups[i].substr(faceIndexGroups[i].find("/") + 2));
 
-						auto pointIndex = stoi(faceIndexGroups[i].substr(currentSlash, nextSlash - currentSlash)) - 1;
+						for (size_t j = 0; j < 2; j++)
+						{
+							if (indexs[j] < 0) {
 
-						if (times == 0) {
+								if (j == 0) {
 
-							if (i >= 3) {
-								trianglePoints.push_back(trianglePoints.at(trianglePoints.size() - (3 * i - 6)));
+									if (i >= 3) {
+										trianglePoints.push_back(trianglePoints.at(trianglePoints.size() - (3 * i - 6)));
+									}
+									if (i >= 3) {
+										trianglePoints.push_back(trianglePoints.at(trianglePoints.size() - 2));
+									}
+									//cout << pointIndex << '\n';
+									trianglePoints.push_back(allPoints[allPoints.size() + indexs[j]]);
+								}
+								else if (j == 1) {
+
+									if (i >= 3) {
+										normal.push_back(normal.at(normal.size() - (3 * i - 6)));
+									}
+									if (i >= 3) {
+										normal.push_back(normal.at(normal.size() - 2));
+									}
+									normal.push_back(normalPoints[normalPoints.size() + indexs[j]]);
+								}
 							}
-							if (i >= 3) {
-								trianglePoints.push_back(trianglePoints.at(trianglePoints.size() - 2));
+							else {
+								indexs[j] -= 1;
+
+								if (j == 0) {
+
+									if (i >= 3) {
+										trianglePoints.push_back(trianglePoints.at(trianglePoints.size() - (3 * i - 6)));
+									}
+									if (i >= 3) {
+										trianglePoints.push_back(trianglePoints.at(trianglePoints.size() - 2));
+									}
+									trianglePoints.push_back(allPoints[indexs[j]]);
+								}
+								else if (j == 1) {
+
+									if (i >= 3) {
+										normal.push_back(normal.at(normal.size() - (3 * i - 6)));
+									}
+									if (i >= 3) {
+										normal.push_back(normal.at(normal.size() - 2));
+									}
+									normal.push_back(normalPoints[indexs[j]]);
+								}
 							}
-							trianglePoints.push_back(allPoints[pointIndex]);
 						}
-						else if (times == 1) {
+					}
+					else {
 
-							if (i >= 3) {
-								texCoord.push_back(texCoord.at(texCoord.size() - (3 * i - 6)));
+
+						while (currentSlash <= faceIndexGroups[i].size()) {
+							auto nextSlash = faceIndexGroups[i].substr(currentSlash).find('/') + currentSlash;
+
+
+							if (times == 3) break;
+
+							int pointIndex = stoi(faceIndexGroups[i].substr(currentSlash, nextSlash - currentSlash));
+							if (pointIndex < 0) {
+
+								if (times == 0) {
+
+									if (i >= 3) {
+										trianglePoints.push_back(trianglePoints.at(trianglePoints.size() - (3 * i - 6)));
+									}
+									if (i >= 3) {
+										trianglePoints.push_back(trianglePoints.at(trianglePoints.size() - 2));
+									}
+									//cout << pointIndex << '\n';
+									trianglePoints.push_back(allPoints[allPoints.size() + pointIndex]);
+								}
+								else if (times == 1) {
+
+									if (i >= 3) {
+										texCoord.push_back(texCoord.at(texCoord.size() - (3 * i - 6)));
+									}
+									if (i >= 3) {
+										texCoord.push_back(texCoord.at(texCoord.size() - 2));
+									}
+									texCoord.push_back(texCoordPoints[allPoints.size() + pointIndex]);
+								}
+								else if (times == 2) {
+
+									if (i >= 3) {
+										normal.push_back(normal.at(normal.size() - (3 * i - 6)));
+									}
+									if (i >= 3) {
+										normal.push_back(normal.at(normal.size() - 2));
+									}
+									normal.push_back(normalPoints[allPoints.size() + pointIndex]);
+								}
 							}
-							if (i >= 3) {
-								texCoord.push_back(texCoord.at(texCoord.size() - 2));
+							else {
+								pointIndex -= 1;
+
+								if (times == 0) {
+
+									if (i >= 3) {
+										trianglePoints.push_back(trianglePoints.at(trianglePoints.size() - (3 * i - 6)));
+									}
+									if (i >= 3) {
+										trianglePoints.push_back(trianglePoints.at(trianglePoints.size() - 2));
+									}
+									trianglePoints.push_back(allPoints[pointIndex]);
+								}
+								else if (times == 1) {
+
+									if (i >= 3) {
+										texCoord.push_back(texCoord.at(texCoord.size() - (3 * i - 6)));
+									}
+									if (i >= 3) {
+										texCoord.push_back(texCoord.at(texCoord.size() - 2));
+									}
+									texCoord.push_back(texCoordPoints[pointIndex]);
+								}
+								else if (times == 2) {
+
+									if (i >= 3) {
+										normal.push_back(normal.at(normal.size() - (3 * i - 6)));
+									}
+									if (i >= 3) {
+										normal.push_back(normal.at(normal.size() - 2));
+									}
+									normal.push_back(normalPoints[pointIndex]);
+								}
 							}
-							texCoord.push_back(texCoordPoints[pointIndex]);
+
+							times++;
+							currentSlash = nextSlash + 1;
+							//break;
 						}
-						else if (times == 2) {
-
-							if (i >= 3) {
-								normal.push_back(normal.at(normal.size() - (3 * i - 6)));
-							}
-							if (i >= 3) {
-								normal.push_back(normal.at(normal.size() - 2));
-							}
-							normal.push_back(normalPoints[pointIndex]);
-						}
-
-						times++;
-						currentSlash = nextSlash + 1;
-						//break;
 					}
 				}
 			}
@@ -248,24 +254,21 @@ static ObjVertex LoadObjFile(const std::string& filename) {
 	return ObjVertex{ .position = trianglePoints, .texCoord = texCoord, .normal = normal };
 }
 
+template <typename T>
 class Model {
 public:
 	std::vector<float3>Points;
 	std::vector<float2>TexCoords;
 	std::vector<float3> Normals;
-	//std::vector<float3>Cols;
-	TextureShader shader;
+	T shader;
 
-	//Model(const std::vector<float3>& points, const std::vector<float3>& cols, const TextureShader& shader) : Points(points), Cols(cols), shader(shader) {}
-	Model(const std::vector<float3>& points, const TextureShader& shader, const std::vector<float2>& texCoords, const std::vector<float3>& normals) :
+	Model(const std::vector<float3>& points, const T& shader, const std::vector<float2>& texCoords, const std::vector<float3>& normals) :
 		Points(points), shader(shader), TexCoords(texCoords), Normals(normals) {}
 
-	static Model LoadFromObj(const std::string& filename) {
+	static Model<T> LoadFromObj(const std::string& filename, T& shader) {
 		auto vertices = LoadObjFile(filename + ".obj");
 
-		auto image = LoadPngFile(filename + ".png");
-
-		return Model(vertices.position, image, vertices.texCoord, vertices.normal);
+		return Model<T>(vertices.position, shader, vertices.texCoord, vertices.normal);
 	}
 };
 
@@ -385,8 +388,8 @@ float3 VertexToScreen(float3 vertex, Transform transform, Camera cam, float2 num
 	return float3(vertex_screen.x, vertex_screen.y, vertex_view.z);
 }
 
-
-static void Render(Model& model, Transform& transform, RenderTarget& target, Camera cam) {
+template <typename T>
+static void Render(Model<T>& model, Transform& transform, RenderTarget& target, Camera cam) {
 	for (size_t i = 0; i < model.Points.size(); i += 3)
 	{
 		auto a = VertexToScreen(model.Points[i + 0], transform, cam, target.Size);
@@ -436,12 +439,10 @@ static void Render(Model& model, Transform& transform, RenderTarget& target, Cam
 					normal += model.Normals[i + 2] / depths.data[2] * weights.z;
 					normal *= depth;
 
-					//target.Buffers[x + y * target.Width] = (static_cast<uint32_t>(model.Cols[i / 3].r) << 16) | (static_cast<uint32_t>(model.Cols[i / 3].g) << 8) |
-					//	(static_cast<uint32_t>(model.Cols[i / 3].b) << 0);
 					auto color = model.shader.PixelColour(texCoord, normal);
-					//auto color = float3();
-					target.Buffers[x + y * target.Width] = (static_cast<uint32_t>(color.r * 255) << 24) | (static_cast<uint32_t>(color.g * 255) << 16) |
-							(static_cast<uint32_t>(color.b * 255) << 8) | (static_cast<uint32_t>(255) << 0);
+
+					target.Buffers[x + y * target.Width] = (static_cast<uint32_t>(255) << 24) | (static_cast<uint32_t>(color.r) << 16) |
+						(static_cast<uint32_t>(color.g) << 8) | (static_cast<uint32_t>(color.b) << 0);
 					target.DepthBuffer[x + y * target.Width] = depth;
 				}
 			}
@@ -470,14 +471,20 @@ int main(int argc, char** argv) {
 	buffers = std::vector<uint32_t>(width * height, 0);
 	image = std::vector<float3>(width * height, float3(0.0f, 0.0f, 0.0f));
 
-	auto BoxModel = Model::LoadFromObj("box");
-	auto BoxModel2 = BoxModel;
-	auto BoxModel3 = BoxModel;
-	auto BoxModel4 = BoxModel;
+	float3 dirToSun = float3::Normalize(float3(0.3, 1.0, 0.6));
+	auto BoxTextureShader = TextureShader::CreateShader("box.png");
+	auto PlaneTextureShader = TextureShader::CreateShader("plane.png");
 
-	auto PlaneModel = Model::LoadFromObj("plane");
+	auto DragonLitShader = LitShader::CreateShader("dragon.png", dirToSun);
 
-	auto MonkeyModel = Model::LoadFromObj("monkey");
+	auto BoxModel = Model<TextureShader>::LoadFromObj("box", BoxTextureShader);
+	auto BoxModel2 = Model<TextureShader>::LoadFromObj("box", BoxTextureShader);
+	auto BoxModel3 = Model<TextureShader>::LoadFromObj("box", BoxTextureShader);
+	auto BoxModel4 = Model<TextureShader>::LoadFromObj("box", BoxTextureShader);
+
+	auto PlaneModel = Model<TextureShader>::LoadFromObj("plane", PlaneTextureShader);
+
+	auto MonkeyModel = Model<LitShader>::LoadFromObj("dragon", DragonLitShader);
 
 	auto Target = RenderTarget(width, height);
 	auto boxTransform = Transform(float3(-5.0f, 0, 10.0f));

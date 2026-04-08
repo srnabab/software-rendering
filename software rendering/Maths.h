@@ -23,6 +23,12 @@ class float2
 		return *this;
 	}
 
+	float2& operator*=(const float &n) {
+		x *= n;
+		y *= n;
+		return *this;
+	}
+
 	float2 operator-(const float2& n) {
 		return float2(x - n.x, y - n.y);
 	}
@@ -72,6 +78,13 @@ public:
 		x -= n.x;
 		y -= n.y;
 		z -= n.z;
+		return *this;
+	}
+
+	float3& operator*=(const float& n) {
+		x *= n;
+		y *= n;
+		z *= n;
 		return *this;
 	}
 

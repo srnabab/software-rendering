@@ -30,40 +30,63 @@ std::vector<uint32_t> buffers;
 
 uint32_t frame = 0;
 
-class Shader {
-public:
-	virtual float3 PixelColour(float2 texCoord) = 0;
-};
+//class Shader {
+//public:
+//	virtual float3 PixelColour(float2 texCoord, float3 normal) = 0;
+//};
 
 class Texture {
 public:
 	uint32_t Width;
 	uint32_t Height;
+	float fWidthMinus1;
+	float fHeightMinus1;
 	std::vector<float3> image;
 
-	Texture(uint32_t width, uint32_t height, const std::vector<float3>& image) : Width(width), Height(height), image(image) {}
+	Texture(uint32_t width, uint32_t height, const std::vector<float3>& image) : Width(width), Height(height), 
+		image(image), fWidthMinus1(static_cast<float>(width - 1)), fHeightMinus1(static_cast<float>(height - 1)){}
 
-	float3 Sample(float2 texCoord) {
+	float3 Sample(float2& texCoord) {
 		texCoord = float2::Saturate(texCoord);
 
-		auto x = std::lroundf(std::clamp(texCoord.x, 0.0f, 1.0f) * (Width - 1));
-		auto y = std::lroundf(std::clamp(texCoord.y, 0.0f, 1.0f) * (Height - 1));
+		//auto x = std::lroundf(texCoord.x * (Width - 1));
+		//auto y = std::lroundf(texCoord.y * (Height - 1));
+
+		auto x = static_cast<int>(texCoord.x * fWidthMinus1);
+		auto y = static_cast<int>(texCoord.y * fHeightMinus1);
 
 		//cout << x << ' ' << y << '\n';
 
-		return this->image[y * Width + x];
-		//return image[y * Width + x];
+		//return this->image[y * Width + x];
+		return image[y * Width + x];
 	}
 };
 
-class TextureShader : public Shader {
+class TextureShader{
 public:
 	Texture texture;
 
 	TextureShader(Texture texture) : texture(texture) {}
 
-	virtual float3 PixelColour(float2 texCoord) {
-		return texture.Sample(texCoord);
+	float3 PixelColour(float2& texCoord, float3& normal) {
+		normal = float3::Normalize(normal);
+		return (normal + float3(1, 1, 1)) * 0.5f;
+	}
+
+	//float3 PixelColour(float2& texCoord, float3& normal) {
+	//	return texture.Sample(texCoord);
+	//}
+};
+
+class LitShader{
+public:
+	Texture texture;
+
+	LitShader(Texture texture) : texture(texture) {}
+
+	float3 PixelColour(float2 texCoord, float3 normal) {
+		normal = float3::Normalize(normal);
+		return (normal + float3(1, 1, 1)) * 0.5f;
 	}
 };
 
@@ -186,7 +209,7 @@ static ObjVertex LoadObjFile(const std::string& filename) {
 							}
 							trianglePoints.push_back(allPoints[pointIndex]);
 						}
-						else if (times == 2) {
+						else if (times == 1) {
 
 							if (i >= 3) {
 								texCoord.push_back(texCoord.at(texCoord.size() - (3 * i - 6)));
@@ -196,7 +219,7 @@ static ObjVertex LoadObjFile(const std::string& filename) {
 							}
 							texCoord.push_back(texCoordPoints[pointIndex]);
 						}
-						else if (times == 1) {
+						else if (times == 2) {
 
 							if (i >= 3) {
 								normal.push_back(normal.at(normal.size() - (3 * i - 6)));
@@ -402,15 +425,23 @@ static void Render(Model& model, Transform& transform, RenderTarget& target, Cam
 					if (depth > target.DepthBuffer[x + y * target.Width]) continue;
 
 					float2 texCoord = float2();
-					texCoord += model.TexCoords[i + 0] * weights.x;
-					texCoord += model.TexCoords[i + 1] * weights.y;
-					texCoord += model.TexCoords[i + 2] * weights.z;
+					texCoord += model.TexCoords[i + 0] / depths.data[0] * weights.x;
+					texCoord += model.TexCoords[i + 1] / depths.data[1] * weights.y;
+					texCoord += model.TexCoords[i + 2] / depths.data[2] * weights.z;
+					texCoord *= depth;
+
+					float3 normal = float3();
+					normal += model.Normals[i + 0] / depths.data[0] * weights.x;
+					normal += model.Normals[i + 1] / depths.data[1] * weights.y;
+					normal += model.Normals[i + 2] / depths.data[2] * weights.z;
+					normal *= depth;
 
 					//target.Buffers[x + y * target.Width] = (static_cast<uint32_t>(model.Cols[i / 3].r) << 16) | (static_cast<uint32_t>(model.Cols[i / 3].g) << 8) |
 					//	(static_cast<uint32_t>(model.Cols[i / 3].b) << 0);
-					auto color = model.shader.PixelColour(texCoord);
-					target.Buffers[x + y * target.Width] = (static_cast<uint32_t>(color.r) << 16) | (static_cast<uint32_t>(color.g) << 8) |
-							(static_cast<uint32_t>(color.b) << 0);
+					auto color = model.shader.PixelColour(texCoord, normal);
+					//auto color = float3();
+					target.Buffers[x + y * target.Width] = (static_cast<uint32_t>(color.r * 255) << 24) | (static_cast<uint32_t>(color.g * 255) << 16) |
+							(static_cast<uint32_t>(color.b * 255) << 8) | (static_cast<uint32_t>(255) << 0);
 					target.DepthBuffer[x + y * target.Width] = depth;
 				}
 			}
@@ -532,7 +563,7 @@ int main(int argc, char** argv) {
 		lastTime = std::chrono::steady_clock::now();
 
 		std::chrono::duration<float, std::milli> duration = lastTime - currentTime;
-		//cout << "Frame: " << frame++ << " Time: " << duration.count() << "ms" << " delta_time: " << deltaTime << endl;
+		cout << "Frame: " << frame++ << " Time: " << duration.count() << "ms" << " delta_time: " << deltaTime << endl;
 
 		state = mfb_update_ex(window, Target.Buffers.data(), width, height);
 

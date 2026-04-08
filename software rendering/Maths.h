@@ -1,6 +1,7 @@
 #pragma once
 
 #include <math.h>
+#include <algorithm>
 
 class float2
 {
@@ -14,6 +15,12 @@ class float2
 
 	float2 operator+(const float2 &n) {
 		return float2(x + n.x, y + n.y);
+	}
+
+	float2& operator+=(const float2 &n) {
+		x += n.x;
+		y += n.y;
+		return *this;
 	}
 
 	float2 operator-(const float2& n) {
@@ -31,6 +38,10 @@ class float2
 	static float Dot(float2 a, float2 b) {
 		return a.x * b.x + a.y * b.y;
 	};
+
+	static float2 Saturate(float2 texCoord) {
+		return float2(std::clamp(texCoord.x, 0.0f, 1.0f), std::clamp(texCoord.y, 0.0f, 1.0f));
+	}
 
 };
 

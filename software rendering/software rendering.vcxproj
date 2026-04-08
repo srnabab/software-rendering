@@ -141,6 +141,7 @@
   <ItemGroup>
     <ClInclude Include="Maths.h" />
     <ClInclude Include="MiniFB_internal.h" />
+    <ClInclude Include="stb_image.h" />
     <ClInclude Include="Window.h" />
     <ClInclude Include="WindowData.h" />
     <ClInclude Include="windows\WindowData_Win.h" />

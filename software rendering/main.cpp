@@ -15,6 +15,10 @@ using namespace std;
 
 #include "Window.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_NO_STDIO
+#include "stb_image.h"
+
 constexpr auto width = 1200;
 constexpr auto height = 900;
 
@@ -26,10 +30,87 @@ std::vector<uint32_t> buffers;
 
 uint32_t frame = 0;
 
+class Shader {
+public:
+	virtual float3 PixelColour(float2 texCoord) = 0;
+};
 
-static std::vector<float3> LoadObjFile(const std::string& filename) {
+class Texture {
+public:
+	uint32_t Width;
+	uint32_t Height;
+	std::vector<float3> image;
+
+	Texture(uint32_t width, uint32_t height, const std::vector<float3>& image) : Width(width), Height(height), image(image) {}
+
+	float3 Sample(float2 texCoord) {
+		texCoord = float2::Saturate(texCoord);
+
+		auto x = std::lroundf(std::clamp(texCoord.x, 0.0f, 1.0f) * (Width - 1));
+		auto y = std::lroundf(std::clamp(texCoord.y, 0.0f, 1.0f) * (Height - 1));
+
+		//cout << x << ' ' << y << '\n';
+
+		return this->image[y * Width + x];
+		//return image[y * Width + x];
+	}
+};
+
+class TextureShader : public Shader {
+public:
+	Texture texture;
+
+	TextureShader(Texture texture) : texture(texture) {}
+
+	virtual float3 PixelColour(float2 texCoord) {
+		return texture.Sample(texCoord);
+	}
+};
+
+static TextureShader LoadPngFile(const std::string& filename) {
+	cout << "Loading texture: " << filename << '\n';
+	std::ifstream file(filename, std::ios::binary | std::ios::ate);
+
+	if (file.is_open()) {
+		auto size = file.tellg();
+
+		file.seekg(0, std::ios::beg);
+
+		std::vector<unsigned char> buffer(size);
+		file.read((char*)buffer.data(), size);
+
+		int width = 0;
+		int height = 0;
+		int channel = 0;
+
+		auto mem = stbi_load_from_memory(buffer.data(), size, &width, &height, &channel, 0);
+		std::vector<float3> image(width * height);
+
+		for (size_t i = 0; i < width * height * channel; i++)
+		{
+			image[i / channel].data[i % channel] = mem[i];
+		}
+
+		return TextureShader(Texture(width, height, image));
+	}
+
+	std::abort();
+}
+
+struct ObjVertex {
+	std::vector<float3> position;
+	std::vector<float2> texCoord;
+	std::vector<float3> normal;
+};
+
+static ObjVertex LoadObjFile(const std::string& filename) {
 	std::vector<float3> allPoints;
+	std::vector<float3> normalPoints;
+	std::vector<float2> texCoordPoints;
+
 	std::vector<float3> trianglePoints;
+	std::vector<float2> texCoord;
+	std::vector<float3> normal;
 
 	string line;
 
@@ -51,6 +132,24 @@ static std::vector<float3> LoadObjFile(const std::string& filename) {
 
 				//cout << "Loaded vertex: " << allPoints.back().x << ' ' << allPoints.back().y << ' ' << allPoints.back().z << '\n';
 			}
+			else if (line.substr(0, 3) == "vn ") {
+				auto firstSpace = line.substr(3).find(' ') + 3;
+				auto secondSpace = line.substr(firstSpace + 1).find(' ') + firstSpace + 1;
+
+				normalPoints.push_back(float3(
+					stof(line.substr(3, firstSpace)),
+					stof(line.substr(firstSpace + 1, secondSpace - firstSpace)),
+					stof(line.substr(secondSpace + 1))
+				));
+			}
+			else if (line.substr(0, 3) == "vt ") {
+				auto firstSpace = line.substr(3).find(' ') + 3;
+
+				texCoordPoints.push_back(float2(
+					stof(line.substr(3, firstSpace)),
+					stof(line.substr(firstSpace + 1))
+				));
+			}
 			else if (line.substr(0, 2) == "f ") {
 				std::vector<string> faceIndexGroups;
 				auto current = 2;
@@ -69,30 +168,48 @@ static std::vector<float3> LoadObjFile(const std::string& filename) {
 				for (size_t i = 0; i < faceIndexGroups.size(); i++)
 				{
 					auto currentSlash = 0;
+					int times = 0;
 					while (currentSlash <= faceIndexGroups[i].size()) {
 						auto nextSlash = faceIndexGroups[i].substr(currentSlash).find('/') + currentSlash;
 
-						//if (nextSlash == currentSlash - 1) break;
+						if (times == 3) break;
 
 						auto pointIndex = stoi(faceIndexGroups[i].substr(currentSlash, nextSlash - currentSlash)) - 1;
 
-						if (i >= 3) {
-							trianglePoints.push_back(trianglePoints.at(trianglePoints.size() - (3 * i - 6)));
-							//cout << "Triangle vertex: " << i << ' ' << trianglePoints.back().x << ' ' <<
-								//trianglePoints.back().y << ' ' << trianglePoints.back().z << '\n';
-						}
-						if (i >= 3) {
-							trianglePoints.push_back(trianglePoints.at(trianglePoints.size() - 2));
-							//cout << "Triangle vertex: " << i << ' ' << trianglePoints.back().x << ' ' <<
-								//trianglePoints.back().y << ' ' << trianglePoints.back().z << '\n';
-						}
-						trianglePoints.push_back(allPoints[pointIndex]);
+						if (times == 0) {
 
-						//cout << "Triangle vertex: " << i << ' ' << trianglePoints.back().x << ' ' <<
-							//trianglePoints.back().y << ' ' << trianglePoints.back().z << '\n';
+							if (i >= 3) {
+								trianglePoints.push_back(trianglePoints.at(trianglePoints.size() - (3 * i - 6)));
+							}
+							if (i >= 3) {
+								trianglePoints.push_back(trianglePoints.at(trianglePoints.size() - 2));
+							}
+							trianglePoints.push_back(allPoints[pointIndex]);
+						}
+						else if (times == 2) {
 
-						//currentSlash = nextSlash + 1;
-						break;
+							if (i >= 3) {
+								texCoord.push_back(texCoord.at(texCoord.size() - (3 * i - 6)));
+							}
+							if (i >= 3) {
+								texCoord.push_back(texCoord.at(texCoord.size() - 2));
+							}
+							texCoord.push_back(texCoordPoints[pointIndex]);
+						}
+						else if (times == 1) {
+
+							if (i >= 3) {
+								normal.push_back(normal.at(normal.size() - (3 * i - 6)));
+							}
+							if (i >= 3) {
+								normal.push_back(normal.at(normal.size() - 2));
+							}
+							normal.push_back(normalPoints[pointIndex]);
+						}
+
+						times++;
+						currentSlash = nextSlash + 1;
+						//break;
 					}
 				}
 			}
@@ -103,10 +220,49 @@ static std::vector<float3> LoadObjFile(const std::string& filename) {
 	//{
 		//cout << "Triangle vertex: " << i << ' ' << trianglePoints[i].x << ' ' << trianglePoints[i].y << ' ' << trianglePoints[i].z << '\n';
 	//}
-	cout << trianglePoints.size() << '\n';
+	//cout << trianglePoints.size() << '\n';
 
-	return trianglePoints;
+	return ObjVertex{ .position = trianglePoints, .texCoord = texCoord, .normal = normal };
 }
+
+class Model {
+public:
+	std::vector<float3>Points;
+	std::vector<float2>TexCoords;
+	std::vector<float3> Normals;
+	//std::vector<float3>Cols;
+	TextureShader shader;
+
+	//Model(const std::vector<float3>& points, const std::vector<float3>& cols, const TextureShader& shader) : Points(points), Cols(cols), shader(shader) {}
+	Model(const std::vector<float3>& points, const TextureShader& shader, const std::vector<float2>& texCoords, const std::vector<float3>& normals) :
+		Points(points), shader(shader), TexCoords(texCoords), Normals(normals) {}
+
+	static Model LoadFromObj(const std::string& filename) {
+		auto vertices = LoadObjFile(filename + ".obj");
+
+		auto image = LoadPngFile(filename + ".png");
+
+		return Model(vertices.position, image, vertices.texCoord, vertices.normal);
+	}
+};
+
+class RenderTarget {
+public:
+	uint32_t Width;
+	uint32_t Height;
+	float2 Size = float2(Width, Height);
+
+	std::vector<uint32_t> Buffers;
+	std::vector<float> DepthBuffer;
+
+	RenderTarget(uint32_t width, uint32_t height) : Width(width), Height(height), Buffers(width* height, 0), DepthBuffer(width* height, 10000000000.0f) {}
+
+	void Clear() {
+		memset(Buffers.data(), 0, Buffers.size() * sizeof(uint32_t));
+		std::fill(DepthBuffer.begin(), DepthBuffer.end(), 10000000000.0f);
+	}
+};
+
 
 const std::vector<float3> DISTINCT_COLORS = {
 	{255, 0, 0},
@@ -141,41 +297,6 @@ static float3 GenRandomColor() {
 
 	return DISTINCT_COLORS[id];
 }
-
-class Model {
-	public:
-		std::vector<float3>Points;
-		std::vector<float3>Cols;
-
-		Model(const std::vector<float3>& points, const std::vector<float3>& cols) : Points(points), Cols(cols) {}
-
-		static Model LoadFromObj(const std::string& filename) {
-			auto points = LoadObjFile(filename);
-			std::vector<float3> cols(points.size() / 3);
-			for (size_t i = 0; i < cols.size(); i++)
-			{
-				cols[i] = GenRandomColor();
-			}
-			return Model(points, cols);
-		}
-};
-
-class RenderTarget {
-	public:
-		uint32_t Width;
-		uint32_t Height;
-		float2 Size = float2(Width, Height);
-
-		std::vector<uint32_t> Buffers;
-		std::vector<float> DepthBuffer;
-
-		RenderTarget(uint32_t width, uint32_t height) : Width(width), Height(height), Buffers(width* height, 0), DepthBuffer(width * height, 10000000000.0f) {}
-
-		void Clear() {
-			memset(Buffers.data(), 0, Buffers.size() * sizeof(uint32_t));
-			std::fill(DepthBuffer.begin(), DepthBuffer.end(), 10000000000.0f);
-		}
-};
 
 static float degToRad(float degrees) {
 	return degrees * (std::numbers::pi / 180.0f);
@@ -280,8 +401,16 @@ static void Render(Model& model, Transform& transform, RenderTarget& target, Cam
 
 					if (depth > target.DepthBuffer[x + y * target.Width]) continue;
 
-					target.Buffers[x + y * target.Width] = (static_cast<uint32_t>(model.Cols[i / 3].r) << 16) | (static_cast<uint32_t>(model.Cols[i / 3].g) << 8) |
-						(static_cast<uint32_t>(model.Cols[i / 3].b) << 0);
+					float2 texCoord = float2();
+					texCoord += model.TexCoords[i + 0] * weights.x;
+					texCoord += model.TexCoords[i + 1] * weights.y;
+					texCoord += model.TexCoords[i + 2] * weights.z;
+
+					//target.Buffers[x + y * target.Width] = (static_cast<uint32_t>(model.Cols[i / 3].r) << 16) | (static_cast<uint32_t>(model.Cols[i / 3].g) << 8) |
+					//	(static_cast<uint32_t>(model.Cols[i / 3].b) << 0);
+					auto color = model.shader.PixelColour(texCoord);
+					target.Buffers[x + y * target.Width] = (static_cast<uint32_t>(color.r) << 16) | (static_cast<uint32_t>(color.g) << 8) |
+							(static_cast<uint32_t>(color.b) << 0);
 					target.DepthBuffer[x + y * target.Width] = depth;
 				}
 			}
@@ -310,14 +439,14 @@ int main(int argc, char** argv) {
 	buffers = std::vector<uint32_t>(width * height, 0);
 	image = std::vector<float3>(width * height, float3(0.0f, 0.0f, 0.0f));
 
-	auto BoxModel = Model::LoadFromObj("box.obj");
+	auto BoxModel = Model::LoadFromObj("box");
 	auto BoxModel2 = BoxModel;
 	auto BoxModel3 = BoxModel;
 	auto BoxModel4 = BoxModel;
 
-	auto PlaneModel = Model::LoadFromObj("plane.obj");
+	auto PlaneModel = Model::LoadFromObj("plane");
 
-	auto MonkeyModel = Model::LoadFromObj("monkey.obj");
+	auto MonkeyModel = Model::LoadFromObj("monkey");
 
 	auto Target = RenderTarget(width, height);
 	auto boxTransform = Transform(float3(-5.0f, 0, 10.0f));

@@ -388,17 +388,37 @@ float3 VertexToScreen(float3 vertex, Transform transform, Camera cam, float2 num
 	return float3(vertex_screen.x, vertex_screen.y, vertex_view.z);
 }
 
+inline void AtomicDepthTestAndWrite(std::vector<float>& depthBuffer, std::vector<uint32_t>& colorBuffer, int idx, float newDepth, uint32_t newColor) {
+	union { float f; uint32_t i; } newVal;
+	newVal.f = newDepth;
+
+	std::atomic_ref<float> target{ depthBuffer[idx] };
+
+	float oldDepth = target.load(std::memory_order_relaxed);
+	union { uint32_t i; float f; } oldVal;
+
+	while (true) {
+		oldVal.i = oldDepth;
+		if (newDepth >= oldVal.f) break;
+
+		if (target.compare_exchange_weak(oldDepth, newVal.i, std::memory_order_relaxed)) {
+			colorBuffer[idx] = newColor;
+			break;
+		}
+	}
+}
+
 template <typename T>
 static void Render(Model<T>& model, Transform& transform, RenderTarget& target, Camera cam) {
-	for (size_t i = 0; i < model.Points.size(); i += 3)
+
+#pragma omp parallel for
+	for (int i = 0; i < model.Points.size(); i += 3)
 	{
 		auto a = VertexToScreen(model.Points[i + 0], transform, cam, target.Size);
 		auto b = VertexToScreen(model.Points[i + 1], transform, cam, target.Size);
 		auto c = VertexToScreen(model.Points[i + 2], transform, cam, target.Size);
 
 		if (a.z <= 0 || b.z <= 0 || c.z <= 0) continue;
-
-		//cout << a.x << ',' << a.y << ' ' << b.x << ',' << b.y << ' ' << c.x << ',' << c.y << '\n';
 
 		float minX = std::min(std::min(a.x, b.x), c.x);
 		float minY = std::min(std::min(a.y, b.y), c.y);
@@ -412,10 +432,9 @@ static void Render(Model<T>& model, Transform& transform, RenderTarget& target, 
 		int blockEndX = std::clamp(static_cast<int>(std::ceil(maxX)), 0, static_cast<int>(target.Width - 1));
 		int blockEndY = std::clamp(static_cast<int>(std::ceil(maxY)), 0, static_cast<int>(target.Height - 1));
 
-
-		for (size_t y = blockStartY; y < blockEndY; y++)
+		for (int y = blockStartY; y < blockEndY; y++)
 		{
-			for (size_t x = blockStartX; x < blockEndX; x++)
+			for (int x = blockStartX; x < blockEndX; x++)
 			{
 				float2 p = float2(static_cast<float>(x), static_cast<float>(y));
 				float3 weights;
@@ -440,10 +459,16 @@ static void Render(Model<T>& model, Transform& transform, RenderTarget& target, 
 					normal *= depth;
 
 					auto color = model.shader.PixelColour(texCoord, normal);
-
-					target.Buffers[x + y * target.Width] = (static_cast<uint32_t>(255) << 24) | (static_cast<uint32_t>(color.r) << 16) |
+					uint32_t color_u32 = (static_cast<uint32_t>(255) << 24) | (static_cast<uint32_t>(color.r) << 16) |
 						(static_cast<uint32_t>(color.g) << 8) | (static_cast<uint32_t>(color.b) << 0);
-					target.DepthBuffer[x + y * target.Width] = depth;
+
+					//target.Buffers[x + y * target.Width] = (static_cast<uint32_t>(255) << 24) | (static_cast<uint32_t>(color.r) << 16) |
+					//	(static_cast<uint32_t>(color.g) << 8) | (static_cast<uint32_t>(color.b) << 0);
+
+					//target.DepthBuffer[x + y * target.Width] = depth;
+
+
+					AtomicDepthTestAndWrite(target.DepthBuffer, target.Buffers, x + y * target.Width, depth, color_u32);
 				}
 			}
 		}
@@ -491,8 +516,8 @@ int main(int argc, char** argv) {
 	auto boxTransform2 = Transform(float3(5.0f, 0.0f, 10.0f));
 	auto boxTransform3 = Transform(float3(5.0f, 0, 0.0f));
 	auto boxTransform4 = Transform(float3(-5.0f, 0.0f, 0.0f));
-	auto planeTransform = Transform(float3(0, 1.0f, 0));
-	auto monkeyTransform = Transform(float3(0, 0, 5.0f));
+	auto planeTransform = Transform(float3(0, 1.0f, 0), float3(2.0, 2.0, 1.0));
+	auto monkeyTransform = Transform(float3(0, 0, 5.0f), float3(1.5, 1.5, 1.5));
 	auto cam = Camera(float3(0, 0, 0));
 
 	auto lastTime = std::chrono::steady_clock::now();

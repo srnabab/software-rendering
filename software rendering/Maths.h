@@ -147,18 +147,28 @@ public:
 	float Yaw;
 	float Pitch;
 	float3 Position;
+	float3 Scale;
 
-	Transform(float yaw, float pitch, float3 positon): Yaw(yaw), Pitch(pitch), Position(positon) {}
-	Transform(float3 position) : Transform(0.0f, 0.0f, position){}
+	Transform(float yaw, float pitch, float3 positon, float3 scale): Yaw(yaw), Pitch(pitch), 
+		Position(positon), Scale(scale) {}
+	Transform(float3 position) : Transform(0.0f, 0.0f, position, float3(1.0, 1.0, 1.0)){}
+	Transform(float3 position, float3 scale) : Transform(0.0f, 0.0f, position, scale) {}
 
 	float3 ToWorldPoint(float3 p) {
 		auto basic = GetBasisVectors();
+		basic.ihat *= Scale.x;
+		basic.jhat *= Scale.y;
+		basic.khat *= Scale.z;
 		return TransformVector(basic.ihat, basic.jhat, basic.khat, p) + Position;
 	}
 
 	float3 ToLocalPoint(float3 worldPoint) {
 		auto basic = GetInverseBasisVectors();
-		return TransformVector(basic.ihat, basic.jhat, basic.khat, worldPoint - Position);
+		auto local = TransformVector(basic.ihat, basic.jhat, basic.khat, worldPoint - Position);
+		local.x /= Scale.x;
+		local.y /= Scale.y;
+		local.z /= Scale.z;
+		return local;
 	}
 
 	IJK GetBasisVectors() const {

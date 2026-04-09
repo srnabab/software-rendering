@@ -7,10 +7,10 @@
 class float2
 {
 	public:
-		union {
+		union alignas(16) {
 			struct { float x, y; };
 			struct { float u, v; };
-			float data[2];
+			float data[4];
 		};
 	float2(float x = 0.0f, float y = 0.0f) : x(x), y(y) {}
 
@@ -60,10 +60,10 @@ class float2
 class float3
 {
 public:
-	union {
+	union alignas(16) {
 		struct { float x, y, z; };
 		struct { float r, g, b; };
-		float data[3];
+		float data[4];
 	};
 
 	float3(float x = 0.0f, float y = 0.0f, float z = 0.0f) : x(x), y(y), z(z) {}

@@ -664,7 +664,7 @@ template <typename T>
 static void Render(Model<T>& model, Transform& transform, RenderTarget& target, Camera cam) {
 	//ProcessModel(model, transform, cam, target.Size);
 
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic, 16)
 	for (int i = 0; i < model.Points.size(); i += 3)
 	{
 
@@ -793,6 +793,8 @@ int main(int argc, char** argv) {
 	int currentMouseX = mfb_get_mouse_x(window);
 	int currentMouseY = mfb_get_mouse_y(window);
 
+	float totalTime = 0.0f;
+
 	auto windowHandle = getActiveWindow();
 	mfb_show_cursor(window, false);
 
@@ -856,6 +858,7 @@ int main(int argc, char** argv) {
 		lastTime = std::chrono::steady_clock::now();
 
 		std::chrono::duration<float, std::milli> duration = lastTime - currentTime;
+		totalTime += duration.count();
 		cout << "Frame: " << frame++ << " Time: " << duration.count() << "ms" << " delta_time: " << deltaTime << endl;
 
 		state = mfb_update_ex(window, Target.Buffers.data(), width, height);
@@ -863,6 +866,8 @@ int main(int argc, char** argv) {
 		if (state != MFB_STATE_OK)
 			break;
 	} while (mfb_wait_sync(window));
+
+	cout << "Average frame time: " << totalTime / frame << "ms" << endl;
 
 	//CreateTestImage();
 	return 0;

@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <algorithm>
+#include <cmath>
 
 class float2
 {
@@ -39,6 +40,10 @@ class float2
 
 	float2 operator*(const float& n) {
 		return float2(x * n, y * n);
+	}
+
+	static float2 Lerp(float2 a, float2 b, float t) {
+		return float2(std::lerp(a.x, b.x, t), std::lerp(a.y, b.y, t));
 	}
 
 	static float Dot(float2 a, float2 b) {
@@ -110,6 +115,10 @@ public:
 
 	operator float2() const {
 		return float2(x, y);
+	}
+
+	static float3 Lerp(float3 a, float3 b, float t) {
+		return float3(std::lerp(a.x, b.x, t), std::lerp(a.y, b.y, t), std::lerp(a.z, b.z, t));
 	}
 
 	static float Dot(float3 a, float3 b) {

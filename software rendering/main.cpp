@@ -254,12 +254,21 @@ static ObjVertex LoadObjFile(const std::string& filename) {
 	return ObjVertex{ .position = trianglePoints, .texCoord = texCoord, .normal = normal };
 }
 
+typedef struct _RasterizerPoint {
+	float Depth;
+	float2 ScreenPos;
+	float2 TexCoords;
+	float3 Normals;
+}RasterizerPoint;
+
+
 template <typename T>
 class Model {
 public:
 	std::vector<float3>Points;
 	std::vector<float2>TexCoords;
 	std::vector<float3> Normals;
+	std::vector<RasterizerPoint> RasterizerPoints;
 	T shader;
 
 	Model(const std::vector<float3>& points, const T& shader, const std::vector<float2>& texCoords, const std::vector<float3>& normals) :
@@ -341,7 +350,6 @@ public:
 	Camera(Transform transform) : Camera(degToRad(60.0f), transform) {}
 };
 
-
 static void CreateTestImage() {
 	const int triangleCount = 250;
 	points = std::vector<float2>(triangleCount * 3);
@@ -378,7 +386,25 @@ static void CreateTestImage() {
 float3 VertexToScreen(float3 vertex, Transform transform, Camera cam, float2 numPixels) {
 	float3 vertex_world = transform.ToWorldPoint(vertex); 
 	float3 vertex_view = cam.transform.ToLocalPoint(vertex_world);
+	float depth = vertex_view.z;
 
+	float screenHeight_world = std::tanf(cam.fov / 2) * 2;
+	float pixelsPerWorldUnit = numPixels.y / screenHeight_world / vertex_view.z;
+
+	float2 pixelOffset = float2(vertex_view.x, vertex_view.y) * pixelsPerWorldUnit;
+	float2 vertex_screen = numPixels / 2.0f + pixelOffset;
+
+	return float3(vertex_screen.x, vertex_screen.y, depth);
+}
+
+float3 VertexToView(float3 vertex, Transform transform, Camera cam) {
+	float3 vertex_world = transform.ToWorldPoint(vertex);
+	float3 vertex_view = cam.transform.ToLocalPoint(vertex_world);
+
+	return vertex_view;
+}
+
+float3 ViewToScreen(float3 vertex_view, Camera cam, float2 numPixels) {
 	float screenHeight_world = std::tanf(cam.fov / 2) * 2;
 	float pixelsPerWorldUnit = numPixels.y / screenHeight_world / vertex_view.z;
 
@@ -409,16 +435,128 @@ inline void AtomicDepthTestAndWrite(std::vector<float>& depthBuffer, std::vector
 }
 
 template <typename T>
-static void Render(Model<T>& model, Transform& transform, RenderTarget& target, Camera cam) {
+void AddRasterizerPoint(Model<T>& model, float3 viewPoint, int vertIndexA, int vertIndexB, float t, Camera cam, float2 numPixels) {
+	auto point = RasterizerPoint{
+		.Depth = viewPoint.z,
+		.ScreenPos = ViewToScreen(viewPoint, cam, numPixels),
+		.TexCoords = float2(),
+		.Normals = float3::Lerp(model.Normals[vertIndexA], model.Normals[vertIndexB], t)
+	};
 
-#pragma omp parallel for
+	if (model.TexCoords.size() > 0) {
+		point.TexCoords = float2::Lerp(model.TexCoords[vertIndexA], model.TexCoords[vertIndexB], t);
+	}
+
+	model.RasterizerPoints.push_back(point);
+}
+
+template <typename T>
+void AddRasterizerPoint(Model<T>& model, float3 viewPoint, int vertIndex, Camera cam, float2 numPixels) {
+	auto point = RasterizerPoint{
+	.Depth = viewPoint.z,
+	.ScreenPos = ViewToScreen(viewPoint, cam, numPixels),
+	.TexCoords = float2(),
+	.Normals = model.Normals[vertIndex]
+	};
+
+	if (model.TexCoords.size() > 0) {
+		point.TexCoords = model.TexCoords[vertIndex];
+	}
+
+	model.RasterizerPoints.push_back(point);
+}
+
+
+template <typename T>
+static void ProcessModel(Model<T>& model, Transform& transform, Camera cam, float2 numPixels) {
+	float3 viewPoints[3];
+	model.RasterizerPoints.clear();
+
 	for (int i = 0; i < model.Points.size(); i += 3)
 	{
-		auto a = VertexToScreen(model.Points[i + 0], transform, cam, target.Size);
-		auto b = VertexToScreen(model.Points[i + 1], transform, cam, target.Size);
-		auto c = VertexToScreen(model.Points[i + 2], transform, cam, target.Size);
+		viewPoints[0] = VertexToView(model.Points[i + 0], transform, cam);
+		viewPoints[1] = VertexToView(model.Points[i + 1], transform, cam);
+		viewPoints[2] = VertexToView(model.Points[i + 2], transform, cam);
 
-		if (a.z <= 0 || b.z <= 0 || c.z <= 0) continue;
+		const float nearClipDst = 0.01f;
+		bool clip0 = viewPoints[0].z <= nearClipDst;
+		bool clip1 = viewPoints[1].z <= nearClipDst;
+		bool clip2 = viewPoints[2].z <= nearClipDst;
+		int clipCount = static_cast<int>(clip0) + static_cast<int>(clip1) + static_cast<int>(clip2);
+
+		switch (clipCount) {
+		case 0:
+		
+			AddRasterizerPoint(model, viewPoints[0], i + 0, cam, numPixels);
+			AddRasterizerPoint(model, viewPoints[1], i + 1, cam, numPixels);
+			AddRasterizerPoint(model, viewPoints[2], i + 2, cam, numPixels);
+			break;
+
+		case 1:
+		{
+			int indexClip = clip0 ? 0 : (clip1 ? 1 : 2);
+			int indexNext = (indexClip + 1) % 3;
+			int indexPrev = (indexClip - 1 + 3) % 3;
+			float3 pointClipped = viewPoints[indexClip];
+			float3 pointA = viewPoints[indexNext];
+			float3 pointB = viewPoints[indexPrev];
+
+			float fracA = (nearClipDst - pointClipped.z) / (pointA.z - pointClipped.z);
+			float fracB = (nearClipDst - pointClipped.z) / (pointB.z - pointClipped.z);
+
+			float3 clipPointAlongEageA = float3::Lerp(pointClipped, pointA, fracA);
+			float3 clipPointAlongEageB = float3::Lerp(pointClipped, pointB, fracB);
+
+			AddRasterizerPoint(model, clipPointAlongEageB, i + indexClip, i + indexPrev, fracB, cam, numPixels);
+			AddRasterizerPoint(model, clipPointAlongEageA, i + indexClip, i + indexNext, fracA, cam, numPixels);
+			AddRasterizerPoint(model, pointB, i + indexPrev, cam, numPixels);
+
+			AddRasterizerPoint(model, clipPointAlongEageA, i + indexClip, i + indexNext, fracA, cam, numPixels);
+			AddRasterizerPoint(model, pointA, i + indexNext, cam, numPixels);
+			AddRasterizerPoint(model, pointB, i + indexPrev, cam, numPixels);
+			break;
+		}
+
+		case 2:
+		{
+			int indexNonClip = !clip0 ? 0 : (!clip1 ? 1 : 2);
+			int indexNext = (indexNonClip + 1) % 3;
+			int indexPrev = (indexNonClip - 1 + 3) % 3;
+
+			float3 pointNonClipped = viewPoints[indexNonClip];
+			float3 pointA = viewPoints[indexNext];
+			float3 pointB = viewPoints[indexPrev];
+
+			float fracA = (nearClipDst - pointNonClipped.z) / (pointA.z - pointNonClipped.z);
+			float fracB = (nearClipDst - pointNonClipped.z) / (pointB.z - pointNonClipped.z);
+
+			float3 clipPointAlongEageA = float3::Lerp(pointNonClipped, pointA, fracA);
+			float3 clipPointAlongEageB = float3::Lerp(pointNonClipped, pointB, fracB);
+
+			AddRasterizerPoint(model, clipPointAlongEageB, i + indexNonClip, i + indexPrev, fracB, cam, numPixels);
+			AddRasterizerPoint(model, pointNonClipped, i + indexNonClip, cam, numPixels);
+			AddRasterizerPoint(model, clipPointAlongEageA, i + indexNonClip, i + indexNext, fracA, cam, numPixels);
+			break;
+		}
+		}
+	}
+}
+
+template <typename T>
+static void Render(Model<T>& model, Transform& transform, RenderTarget& target, Camera cam) {
+	ProcessModel(model, transform, cam, target.Size);
+
+#pragma omp parallel for
+	for (int i = 0; i < model.RasterizerPoints.size(); i += 3)
+	{
+		//auto a = VertexToScreen(model.RasterizerPoints[i + 0], transform, cam, target.Size);
+		//auto b = VertexToScreen(model.RasterizerPoints[i + 1], transform, cam, target.Size);
+		//auto c = VertexToScreen(model.RasterizerPoints[i + 2], transform, cam, target.Size);
+		auto a = model.RasterizerPoints[i + 0].ScreenPos;
+		auto b = model.RasterizerPoints[i + 1].ScreenPos;
+		auto c = model.RasterizerPoints[i + 2].ScreenPos;
+
+		//if (a.z <= 0 || b.z <= 0 || c.z <= 0) continue;
 
 		float minX = std::min(std::min(a.x, b.x), c.x);
 		float minY = std::min(std::min(a.y, b.y), c.y);
@@ -441,21 +579,22 @@ static void Render(Model<T>& model, Transform& transform, RenderTarget& target, 
 
 				if (PointInTriangle((float2)a, (float2)b, (float2)c, p, weights)) {
 
-					float3 depths = float3(a.z, b.z, c.z);
+					float3 depths = float3(model.RasterizerPoints[i + 0].Depth, model.RasterizerPoints[i + 1].Depth,
+						model.RasterizerPoints[i + 2].Depth);
 					float depth = 1 / float3::Dot(1 / depths, weights);
 
 					if (depth > target.DepthBuffer[x + y * target.Width]) continue;
 
 					float2 texCoord = float2();
-					texCoord += model.TexCoords[i + 0] / depths.data[0] * weights.x;
-					texCoord += model.TexCoords[i + 1] / depths.data[1] * weights.y;
-					texCoord += model.TexCoords[i + 2] / depths.data[2] * weights.z;
+					texCoord += model.RasterizerPoints[i + 0].TexCoords / depths.data[0] * weights.x;
+					texCoord += model.RasterizerPoints[i + 1].TexCoords / depths.data[1] * weights.y;
+					texCoord += model.RasterizerPoints[i + 2].TexCoords / depths.data[2] * weights.z;
 					texCoord *= depth;
 
 					float3 normal = float3();
-					normal += model.Normals[i + 0] / depths.data[0] * weights.x;
-					normal += model.Normals[i + 1] / depths.data[1] * weights.y;
-					normal += model.Normals[i + 2] / depths.data[2] * weights.z;
+					normal += model.RasterizerPoints[i + 0].Normals / depths.data[0] * weights.x;
+					normal += model.RasterizerPoints[i + 1].Normals / depths.data[1] * weights.y;
+					normal += model.RasterizerPoints[i + 2].Normals / depths.data[2] * weights.z;
 					normal *= depth;
 
 					auto color = model.shader.PixelColour(texCoord, normal);
